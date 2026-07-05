@@ -34,8 +34,21 @@ Current features:
 
 - Qt window
 - OpenCV camera
-- ArUco DICT_5X5_100 detection
+- Selectable ArUco DICT_5X5_100 and DICT_4X4_100 detection
+- Camera calibration using an 8x11 ChArUco board with 20 mm squares and
+  15 mm DICT_5X5_100 markers
+- Projected 3D surface normal using 15 mm (5x5) or 10 mm (4x4) markers
 - Live preview
+
+Camera calibration:
+
+1. Print `output/pdf/charuco-8x11-20mm-15mm-a4.pdf` at 100% scale. Do not use
+   "fit to page". The source SVG is in `calibration/`.
+2. Enable **Calibration mode**.
+3. Capture at least 10 views at different positions, distances, and angles.
+   Each view needs at least 12 visible ChArUco corners; partial views are valid.
+4. Select **Calibrate**. The parameters are saved in the user's application
+   configuration directory and loaded on future runs.
 
 Roadmap:
 

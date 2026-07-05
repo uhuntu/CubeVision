@@ -7,7 +7,7 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
-find_package(OpenCV REQUIRED COMPONENTS core imgproc videoio aruco)
+find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs videoio aruco calib3d)
 
 add_executable(CubeVision
     src/main.cpp
@@ -16,6 +16,9 @@ add_executable(CubeVision
 )
 
 target_link_libraries(CubeVision PRIVATE Qt6::Widgets ${OpenCV_LIBS})
+
+add_executable(GenerateCharuco EXCLUDE_FROM_ALL tools/generate_charuco.cpp)
+target_link_libraries(GenerateCharuco PRIVATE ${OpenCV_LIBS})
 
 if(WIN32)
     get_target_property(QT_CORE_LIBRARY Qt6::Core IMPORTED_LOCATION)
