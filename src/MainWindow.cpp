@@ -28,6 +28,23 @@ const cv::aruco::CharucoBoard& calibrationBoard(){
         cv::aruco::getPredefinedDictionary(cv::aruco::DICT_5X5_100));
     return board;
 }
+
+cv::Scalar cubeFaceColor(const int markerId){
+    // Marker IDs in the CubeNet layout encode the face as id modulo six.
+    switch(markerId%6){
+    case 0: return {0,255,255};   // Up: yellow
+    case 1: return {255,255,255}; // Down: white
+    case 2: return {255,0,0};     // Left: blue
+    case 3: return {0,190,0};     // Right: green
+    case 4: return {0,0,255};     // Front: red
+    default:return {0,128,255};   // Back: orange
+    }
+}
+
+const char* cubeFaceName(const int markerId){
+    static constexpr const char *names[]={"U","D","L","R","F","B"};
+    return names[markerId%6];
+}
 }
 
 MainWindow::MainWindow(){
@@ -234,7 +251,36 @@ void MainWindow::updateFrame(){
         std::vector<int> ids;
         detector.detectMarkers(frame,corners,ids);
         if(!ids.empty()){
-            cv::aruco::drawDetectedMarkers(frame,corners,ids);
+            if(use5x5){
+                cv::aruco::drawDetectedMarkers(frame,corners,ids);
+            }else{
+                cv::Mat tint=frame.clone();
+                for(std::size_t index=0;index<ids.size();++index){
+                    std::vector<cv::Point> polygon;
+                    polygon.reserve(corners[index].size());
+                    for(const cv::Point2f &corner:corners[index])
+                        polygon.emplace_back(cvRound(corner.x),cvRound(corner.y));
+                    cv::fillConvexPoly(tint,polygon,cubeFaceColor(ids[index]),cv::LINE_AA);
+                }
+                cv::addWeighted(tint,0.30,frame,0.70,0.0,frame);
+
+                for(std::size_t index=0;index<ids.size();++index){
+                    const cv::Scalar color=cubeFaceColor(ids[index]);
+                    for(std::size_t corner=0;corner<corners[index].size();++corner)
+                        cv::line(frame,
+                                 corners[index][corner],
+                                 corners[index][(corner+1)%corners[index].size()],
+                                 color,3,cv::LINE_AA);
+
+                    const std::string label=std::string(cubeFaceName(ids[index]))
+                        +" "+std::to_string(ids[index]);
+                    const cv::Point2f labelPosition=corners[index][0]+cv::Point2f(0.0F,-8.0F);
+                    cv::putText(frame,label,labelPosition,cv::FONT_HERSHEY_SIMPLEX,
+                                0.65,cv::Scalar(0,0,0),4,cv::LINE_AA);
+                    cv::putText(frame,label,labelPosition,cv::FONT_HERSHEY_SIMPLEX,
+                                0.65,color,2,cv::LINE_AA);
+                }
+            }
 
             if(cameraCalibrated){
                 cv::Mat scaledCameraMatrix=cameraMatrix.clone();
