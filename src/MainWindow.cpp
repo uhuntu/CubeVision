@@ -16,6 +16,9 @@ constexpr int MinimumCalibrationSamples=10;
 constexpr int MinimumCornersPerSample=12;
 constexpr float Marker5x5SizeMeters=0.015F;
 constexpr float Marker4x4SizeMeters=0.010F;
+constexpr int CaptureWidth=1920;
+constexpr int CaptureHeight=1080;
+constexpr int CaptureFramesPerSecond=30;
 
 const cv::aruco::CharucoBoard& calibrationBoard(){
     static const cv::aruco::CharucoBoard board(
@@ -75,9 +78,19 @@ MainWindow::MainWindow(){
     view->setAlignment(Qt::AlignCenter);
     setCentralWidget(view);
 
+#ifdef __linux__
+    // Camera indices are not stable when USB devices are unplugged. Select the
+    // first available V4L2 capture device instead of assuming /dev/video0.
+    for(int cameraIndex=0;cameraIndex<10 && !cap.isOpened();++cameraIndex)
+        cap.open(cameraIndex,cv::CAP_V4L2);
+#else
     cap.open(0);
-    cap.set(cv::CAP_PROP_FRAME_WIDTH,640);
-    cap.set(cv::CAP_PROP_FRAME_HEIGHT,480);
+#endif
+    cap.set(cv::CAP_PROP_FOURCC,cv::VideoWriter::fourcc('M','J','P','G'));
+    cap.set(cv::CAP_PROP_FRAME_WIDTH,CaptureWidth);
+    cap.set(cv::CAP_PROP_FRAME_HEIGHT,CaptureHeight);
+    cap.set(cv::CAP_PROP_FPS,CaptureFramesPerSecond);
+    cap.set(cv::CAP_PROP_BUFFERSIZE,1);
 
     cameraCalibrated=loadCalibration();
     calibrationStatus->setText(cameraCalibrated ? " Calibrated" : " Not calibrated");
@@ -287,5 +300,6 @@ void MainWindow::updateFrame(){
 
     cv::cvtColor(frame,frame,cv::COLOR_BGR2RGB);
     QImage image(frame.data,frame.cols,frame.rows,frame.step,QImage::Format_RGB888);
-    view->setPixmap(QPixmap::fromImage(image));
+    view->setPixmap(QPixmap::fromImage(image).scaled(
+        view->size(),Qt::KeepAspectRatio,Qt::SmoothTransformation));
 }
