@@ -13,9 +13,29 @@ add_executable(CubeVision
     src/main.cpp
     src/MainWindow.cpp
     src/MainWindow.h
+    src/CubeWidget.cpp
+    src/CubeWidget.h
 )
 
 target_link_libraries(CubeVision PRIVATE Qt6::Widgets ${OpenCV_LIBS})
+
+add_executable(CubeSolver
+    third_party/dikcube/cube.c
+    third_party/dikcube/phase1.c
+    third_party/dikcube/phase2.c
+    third_party/dikcube/setcube.c
+    third_party/dikcube/permcube.c
+    third_party/dikcube/prntsol.c
+    third_party/dikcube/globals.c
+)
+set_target_properties(CubeSolver PROPERTIES
+    AUTOMOC OFF
+    C_STANDARD 90
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS ON
+)
+target_compile_definitions(CubeSolver PRIVATE LARGE_MEM)
+target_include_directories(CubeSolver PRIVATE third_party/dikcube)
 
 add_executable(GenerateCharuco EXCLUDE_FROM_ALL tools/generate_charuco.cpp)
 target_link_libraries(GenerateCharuco PRIVATE ${OpenCV_LIBS})
@@ -36,6 +56,7 @@ if(WIN32)
         COMMAND "${CMAKE_COMMAND}" -E rm -rf "${DEPLOY_DIR}"
         COMMAND "${CMAKE_COMMAND}" -E make_directory "${DEPLOY_DIR}"
         COMMAND "${CMAKE_COMMAND}" -E copy "$<TARGET_FILE:CubeVision>" "${DEPLOY_DIR}/"
+        COMMAND "${CMAKE_COMMAND}" -E copy "$<TARGET_FILE:CubeSolver>" "${DEPLOY_DIR}/"
         COMMAND "${WINDEPLOYQT_EXECUTABLE}"
             --no-translations
             --dir "${DEPLOY_DIR}"
@@ -45,7 +66,7 @@ if(WIN32)
             "-DDESTINATION=${DEPLOY_DIR}"
             "-DRUNTIME_DIR=${QT_RUNTIME_DIR}"
             -P "${CMAKE_SOURCE_DIR}/cmake/DeployRuntime.cmake"
-        DEPENDS CubeVision
+        DEPENDS CubeVision CubeSolver
         COMMENT "Deploying CubeVision runtime dependencies"
         VERBATIM
     )

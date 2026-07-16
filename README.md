@@ -39,6 +39,10 @@ Current features:
   15 mm DICT_5X5_100 markers
 - Projected 3D surface normal using 15 mm (5x5) or 10 mm (4x4) markers
 - Live preview
+- Color-coded CubeNet marker overlays
+- Six-face cube-state scanning with marker ID validation
+- Offline two-phase solving with step-by-step move guidance
+- Live 3D cube-state visualization with active-move highlighting
 
 Camera calibration:
 
