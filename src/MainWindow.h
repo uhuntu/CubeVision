@@ -36,6 +36,7 @@ private:
     void finishCubeSolver(int exitCode,QProcess::ExitStatus exitStatus);
     void updateSolutionStep();
     void verifySolutionMove();
+    void processAutomaticMoveVerification(const std::vector<int> &ids);
 
     QComboBox *dictionarySelector;
     QPushButton *calibrationModeButton;
@@ -70,4 +71,7 @@ private:
     QStringList solutionMoves;
     int solutionMoveIndex=0;
     std::vector<int> lastMarkerIds;
+    int stableVerificationFrames=0;
+    int missedVerificationFrames=0;
+    std::vector<int> stableVerificationIds;
 };

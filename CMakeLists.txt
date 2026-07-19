@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.21)
 project(CubeVision)
 
+include(CTest)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
@@ -15,9 +17,21 @@ add_executable(CubeVision
     src/MainWindow.h
     src/CubeWidget.cpp
     src/CubeWidget.h
+    src/CubeState.cpp
+    src/CubeState.h
 )
 
 target_link_libraries(CubeVision PRIVATE Qt6::Widgets ${OpenCV_LIBS})
+
+if(BUILD_TESTING)
+    add_executable(CubeStateTest
+        tests/CubeStateTest.cpp
+        src/CubeState.cpp
+    )
+    target_include_directories(CubeStateTest PRIVATE src)
+    target_link_libraries(CubeStateTest PRIVATE Qt6::Core)
+    add_test(NAME CubeStateTest COMMAND CubeStateTest)
+endif()
 
 add_executable(CubeSolver
     third_party/dikcube/cube.c

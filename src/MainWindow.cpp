@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "CubeState.h"
 #include "CubeWidget.h"
 #include <QDir>
 #include <QCoreApplication>
@@ -61,8 +62,6 @@ char cubeColorName(const int markerId){
     static constexpr char names[]={'Y','W','B','G','R','O'};
     return names[markerId%6];
 }
-
-using CubeFaces=std::array<std::array<int,9>,6>;
 
 std::array<int,9> rotateFaceClockwise(const std::array<int,9> &face){
     std::array<int,9> rotated;
@@ -190,39 +189,80 @@ bool cubeStateIsSolvable(const CubeFaces &faces){
     return permutationParity(cornerPermutation,8)==permutationParity(edgePermutation,12);
 }
 
-struct CubeVector{ int x; int y; int z; };
-struct FaceletGeometry{ CubeVector position; CubeVector normal; };
+bool cubeMarkerCubiesAreValid(const CubeFaces &faces){
+    // Exact sticker locations from the printed CubeNet.  Unlike colors, these
+    // IDs distinguish every sticker and therefore remove the ambiguity when
+    // choosing among the four possible rotations of each scanned face.
+    static constexpr CubeFaces solvedMarkers={{
+        {{42,48, 6,36, 0,12,30,24,18}}, // U
+        {{43,49, 7,37, 1,13,31,25,19}}, // D
+        {{44,50, 8,38, 2,14,32,26,20}}, // L
+        {{45,51, 9,39, 3,15,33,27,21}}, // R
+        {{46,52,10,40, 4,16,34,28,22}}, // F
+        {{47,53,11,41, 5,17,35,29,23}}  // B
+    }};
+    struct Facelet{ int face; int position; };
+    static constexpr Facelet cornerFacelets[8][3]={
+        {{0,8},{3,0},{4,2}},{{0,6},{4,0},{2,2}},
+        {{0,0},{2,0},{5,2}},{{0,2},{5,0},{3,2}},
+        {{1,2},{4,8},{3,6}},{{1,0},{2,8},{4,6}},
+        {{1,6},{5,8},{2,6}},{{1,8},{3,8},{5,6}}
+    };
+    static constexpr Facelet edgeFacelets[12][2]={
+        {{0,5},{3,1}},{{0,7},{4,1}},{{0,3},{2,1}},{{0,1},{5,1}},
+        {{1,5},{3,7}},{{1,1},{4,7}},{{1,3},{2,7}},{{1,7},{5,7}},
+        {{4,5},{3,3}},{{4,3},{2,5}},{{5,5},{2,3}},{{5,3},{3,5}}
+    };
+    auto marker=[&faces](const Facelet facelet){
+        return faces[facelet.face][facelet.position];
+    };
+    auto solvedMarker=[](const Facelet facelet){
+        return solvedMarkers[facelet.face][facelet.position];
+    };
 
-FaceletGeometry faceletGeometry(const int face,const int row,const int column){
-    switch(face){
-    case 0: return {{column-1, 1,row-1},{ 0, 1, 0}}; // U
-    case 1: return {{column-1,-1,1-row},{ 0,-1, 0}}; // D
-    case 2: return {{-1,1-row,column-1},{-1, 0, 0}}; // L
-    case 3: return {{ 1,1-row,1-column},{ 1, 0, 0}}; // R
-    case 4: return {{column-1,1-row, 1},{ 0, 0, 1}}; // F
-    default:return {{1-column,1-row,-1},{ 0, 0,-1}}; // B
+    std::array<bool,8> cornersSeen{};
+    for(const auto &position:cornerFacelets){
+        std::array<int,3> observed={marker(position[0]),marker(position[1]),
+                                    marker(position[2])};
+        std::sort(observed.begin(),observed.end());
+        int cubie=-1;
+        for(int candidate=0;candidate<8;++candidate){
+            std::array<int,3> expected={solvedMarker(cornerFacelets[candidate][0]),
+                                        solvedMarker(cornerFacelets[candidate][1]),
+                                        solvedMarker(cornerFacelets[candidate][2])};
+            std::sort(expected.begin(),expected.end());
+            if(observed==expected){
+                cubie=candidate;
+                break;
+            }
+        }
+        if(cubie<0 || cornersSeen[cubie])
+            return false;
+        cornersSeen[cubie]=true;
     }
-}
 
-std::pair<int,int> faceletIndex(const FaceletGeometry &geometry){
-    const auto &position=geometry.position;
-    const auto &normal=geometry.normal;
-    if(normal.y==1)  return {0,(position.z+1)*3+position.x+1};
-    if(normal.y==-1) return {1,(1-position.z)*3+position.x+1};
-    if(normal.x==-1) return {2,(1-position.y)*3+position.z+1};
-    if(normal.x==1)  return {3,(1-position.y)*3+1-position.z};
-    if(normal.z==1)  return {4,(1-position.y)*3+position.x+1};
-    return {5,(1-position.y)*3+1-position.x};
-}
-
-CubeVector rotateClockwise(const CubeVector value,const CubeVector normal){
-    const int parallel=value.x*normal.x+value.y*normal.y+value.z*normal.z;
-    const CubeVector cross={normal.y*value.z-normal.z*value.y,
-                            normal.z*value.x-normal.x*value.z,
-                            normal.x*value.y-normal.y*value.x};
-    return {normal.x*parallel-cross.x,
-            normal.y*parallel-cross.y,
-            normal.z*parallel-cross.z};
+    std::array<bool,12> edgesSeen{};
+    for(const auto &position:edgeFacelets){
+        std::array<int,2> observed={marker(position[0]),marker(position[1])};
+        std::sort(observed.begin(),observed.end());
+        int cubie=-1;
+        for(int candidate=0;candidate<12;++candidate){
+            std::array<int,2> expected={solvedMarker(edgeFacelets[candidate][0]),
+                                        solvedMarker(edgeFacelets[candidate][1])};
+            std::sort(expected.begin(),expected.end());
+            if(observed==expected){
+                cubie=candidate;
+                break;
+            }
+        }
+        if(cubie<0 || edgesSeen[cubie])
+            return false;
+        edgesSeen[cubie]=true;
+    }
+    for(int face=0;face<6;++face)
+        if(faces[face][4]!=face)
+            return false;
+    return true;
 }
 
 int faceIndex(const QChar face){
@@ -242,28 +282,6 @@ int verificationFaceForMove(const int movingFace){
     return movingFace==4 || movingFace==5 ? 0 : 4; // F/B -> U; others -> F
 }
 
-CubeFaces applyCubeMove(const CubeFaces &faces,const QChar face,const int turns){
-    CubeFaces result=faces;
-    const int movingFace=faceIndex(face);
-    const CubeVector axis=faceletGeometry(movingFace,1,1).normal;
-    for(int sourceFace=0;sourceFace<6;++sourceFace){
-        for(int sourcePosition=0;sourcePosition<9;++sourcePosition){
-            FaceletGeometry geometry=faceletGeometry(
-                sourceFace,sourcePosition/3,sourcePosition%3);
-            const int layer=geometry.position.x*axis.x
-                +geometry.position.y*axis.y+geometry.position.z*axis.z;
-            if(layer!=1)
-                continue;
-            for(int turn=0;turn<turns;++turn){
-                geometry.position=rotateClockwise(geometry.position,axis);
-                geometry.normal=rotateClockwise(geometry.normal,axis);
-            }
-            const auto [destinationFace,destinationPosition]=faceletIndex(geometry);
-            result[destinationFace][destinationPosition]=faces[sourceFace][sourcePosition];
-        }
-    }
-    return result;
-}
 }
 
 MainWindow::MainWindow(){
@@ -321,7 +339,7 @@ MainWindow::MainWindow(){
     previousMoveButton->setVisible(false);
     coachToolbar->addWidget(previousMoveButton);
 
-    nextMoveButton=new QPushButton("Verify move",coachToolbar);
+    nextMoveButton=new QPushButton("Verify now",coachToolbar);
     nextMoveButton->setEnabled(false);
     coachToolbar->addWidget(nextMoveButton);
 
@@ -369,6 +387,9 @@ MainWindow::MainWindow(){
         stableCubeScanIds.clear();
         solutionMoves.clear();
         solutionMoveIndex=0;
+        stableVerificationFrames=0;
+        missedVerificationFrames=0;
+        stableVerificationIds.clear();
         solutionStatus->clear();
         cubeWidget->clearCubeState();
         solveCubeButton->setEnabled(false);
@@ -416,6 +437,7 @@ MainWindow::MainWindow(){
         face.fill(-1);
     cubeWidget->setCubeState(scannedCubeFaces);
     updateCubeScanStatus();
+    captureCubeFaceButton->setChecked(true);
 
     cubeSolver=new QProcess(this);
     cubeSolver->setProcessChannelMode(QProcess::MergedChannels);
@@ -507,7 +529,7 @@ bool MainWindow::normalizeCubeFaceOrientations(){
             for(int turn=0;turn<turns;++turn)
                 face=rotateFaceClockwise(face);
         }
-        if(cubeStateIsSolvable(candidate)){
+        if(cubeMarkerCubiesAreValid(candidate) && cubeStateIsSolvable(candidate)){
             scannedCubeFaces=std::move(candidate);
             return true;
         }
@@ -594,6 +616,9 @@ void MainWindow::startCubeSolver(){
 
     solutionMoves.clear();
     solutionMoveIndex=0;
+    stableVerificationFrames=0;
+    missedVerificationFrames=0;
+    stableVerificationIds.clear();
     solutionStatus->setText("Checking cube state and calculating a solution...");
     solveCubeButton->setEnabled(false);
     previousMoveButton->setEnabled(false);
@@ -667,6 +692,10 @@ void MainWindow::finishCubeSolver(const int exitCode,const QProcess::ExitStatus 
 }
 
 void MainWindow::updateSolutionStep(){
+    stableVerificationFrames=0;
+    missedVerificationFrames=0;
+    stableVerificationIds.clear();
+    nextMoveButton->setText("Verify now");
     if(solutionMoves.isEmpty()){
         previousMoveButton->setEnabled(false);
         nextMoveButton->setEnabled(false);
@@ -694,7 +723,7 @@ void MainWindow::updateSolutionStep(){
     const int verificationFace=verificationFaceForMove(faceIndex(move.front()));
     const QChar verificationLetter=QChar::fromLatin1(cubeFaceName(verificationFace)[0]);
     solutionStatus->setText(
-        QString("Step %1/%2:  %3  - turn %4 %5; then show %6 to verify")
+        QString("Step %1/%2:  %3  - turn %4 %5; then show %6 (auto verify)")
             .arg(solutionMoveIndex+1)
             .arg(solutionMoves.size())
             .arg(move)
@@ -704,6 +733,72 @@ void MainWindow::updateSolutionStep(){
     previousMoveButton->setEnabled(false);
     nextMoveButton->setEnabled(true);
     solveCubeButton->setEnabled(true);
+}
+
+void MainWindow::processAutomaticMoveVerification(const std::vector<int> &ids){
+    constexpr int RequiredStableObservations=5;
+    constexpr int AllowedMissedFrames=6;
+    if(solutionMoveIndex<0 || solutionMoveIndex>=solutionMoves.size()){
+        stableVerificationFrames=0;
+        missedVerificationFrames=0;
+        stableVerificationIds.clear();
+        return;
+    }
+
+    auto missObservation=[this]{
+        if(++missedVerificationFrames<=AllowedMissedFrames)
+            return;
+        stableVerificationFrames=0;
+        stableVerificationIds.clear();
+        nextMoveButton->setText("Verify now");
+    };
+    if(ids.size()!=9){
+        missObservation();
+        return;
+    }
+
+    const QString move=solutionMoves[solutionMoveIndex];
+    const int verificationFace=verificationFaceForMove(faceIndex(move.front()));
+    if(std::find(ids.begin(),ids.end(),verificationFace)==ids.end()){
+        missObservation();
+        return;
+    }
+    missedVerificationFrames=0;
+
+    std::array<int,9> observed;
+    std::copy(ids.begin(),ids.end(),observed.begin());
+    if(sameFaceMarkers(observed,scannedCubeFaces[verificationFace])){
+        // The requested face is visible but the move has not happened yet.
+        // Keep the step instruction on screen instead of repeatedly reporting
+        // an unchanged state.
+        stableVerificationFrames=0;
+        stableVerificationIds.clear();
+        nextMoveButton->setText("Verify now");
+        return;
+    }
+
+    std::vector<int> signature=ids;
+    std::sort(signature.begin(),signature.end());
+    if(signature!=stableVerificationIds){
+        stableVerificationIds=std::move(signature);
+        stableVerificationFrames=1;
+        nextMoveButton->setText(
+            QString("Auto verify %1/%2")
+                .arg(stableVerificationFrames).arg(RequiredStableObservations));
+        return;
+    }
+    ++stableVerificationFrames;
+    nextMoveButton->setText(
+        QString("Auto verify %1/%2")
+            .arg(stableVerificationFrames).arg(RequiredStableObservations));
+    if(stableVerificationFrames<RequiredStableObservations)
+        return;
+
+    stableVerificationFrames=0;
+    missedVerificationFrames=0;
+    stableVerificationIds.clear();
+    nextMoveButton->setText("Verify now");
+    verifySolutionMove();
 }
 
 void MainWindow::verifySolutionMove(){
@@ -1047,8 +1142,10 @@ void MainWindow::updateFrame(){
         std::vector<std::vector<cv::Point2f>> corners;
         std::vector<int> ids;
         detector.detectMarkers(frame,corners,ids);
-        if(!use5x5)
+        if(!use5x5){
             lastMarkerIds=ids;
+            processAutomaticMoveVerification(ids);
+        }
         if(!use5x5)
             processAutomaticCubeScan(corners,ids);
         if(!ids.empty()){

@@ -56,17 +56,6 @@ QVector3D faceNormal(const int face){
     }
 }
 
-QQuaternion alignFaceToFront(const int face){
-    switch(face){
-    case 0: return QQuaternion::fromAxisAndAngle(1,0,0, 90.0F); // U
-    case 1: return QQuaternion::fromAxisAndAngle(1,0,0,-90.0F); // D
-    case 2: return QQuaternion::fromAxisAndAngle(0,1,0, 90.0F); // L
-    case 3: return QQuaternion::fromAxisAndAngle(0,1,0,-90.0F); // R
-    case 4: return {};                                           // F
-    default:return QQuaternion::fromAxisAndAngle(0,1,0,180.0F); // B
-    }
-}
-
 QVector3D facePoint(const int face,const int row,const int column){
     const float r=static_cast<float>(row);
     const float c=static_cast<float>(column);
@@ -167,8 +156,10 @@ void CubeWidget::paintEvent(QPaintEvent *){
         : QQuaternion();
     const QQuaternion tiltX=QQuaternion::fromAxisAndAngle(1,0,0,22.0F);
     const QQuaternion tiltY=QQuaternion::fromAxisAndAngle(0,1,0,-28.0F);
-    const QQuaternion model=tiltX*tiltY
-        *(activeFace>=0 ? alignFaceToFront(activeFace) : QQuaternion());
+    // Keep a stable world frame: +Y/U/yellow is always the top of the cube.
+    // Only the requested layer moves; selecting a move must not rotate the
+    // entire cube and change the user's spatial reference.
+    const QQuaternion model=tiltX*tiltY;
 
     const QPointF center(width()*0.5,height()*0.47);
     const float distance=8.0F;
@@ -226,7 +217,9 @@ void CubeWidget::paintEvent(QPaintEvent *){
 
     // Put the notation directly on the selected face.  The translucent badge
     // keeps it readable over any sticker colors while leaving the face visible.
-    if(activeFace>=0){
+    const bool activeFaceVisible=activeFace>=0
+        && model.rotatedVector(faceNormal(activeFace)).z()>0.02F;
+    if(activeFaceVisible){
         QPolygonF activePolygon;
         for(const auto &[row,column]:
             {std::pair{0,0},std::pair{0,3},std::pair{3,3},std::pair{3,0}}){
