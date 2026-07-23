@@ -47,6 +47,7 @@ private:
     QPushButton *toggleCalibrationButton;
     QPushButton *captureCubeFaceButton;
     QPushButton *resetCubeScanButton;
+    QComboBox *solveMethodSelector;
     QPushButton *solveCubeButton;
     QPushButton *previousMoveButton;
     QPushButton *nextMoveButton;
@@ -75,6 +76,7 @@ private:
     QProcess *cubeSolver=nullptr;
     QStringList solutionMoves;
     int solutionMoveIndex=0;
+    bool crossSolutionActive=false;
     std::vector<int> lastMarkerIds;
     int stableVerificationFrames=0;
     int missedVerificationFrames=0;

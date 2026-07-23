@@ -19,6 +19,8 @@ add_executable(CubeVision
     src/CubeWidget.h
     src/CubeState.cpp
     src/CubeState.h
+    src/CrossSolver.cpp
+    src/CrossSolver.h
 )
 
 target_link_libraries(CubeVision PRIVATE Qt6::Widgets ${OpenCV_LIBS})
@@ -31,6 +33,15 @@ if(BUILD_TESTING)
     target_include_directories(CubeStateTest PRIVATE src)
     target_link_libraries(CubeStateTest PRIVATE Qt6::Core)
     add_test(NAME CubeStateTest COMMAND CubeStateTest)
+
+    add_executable(CrossSolverTest
+        tests/CrossSolverTest.cpp
+        src/CrossSolver.cpp
+        src/CubeState.cpp
+    )
+    target_include_directories(CrossSolverTest PRIVATE src)
+    target_link_libraries(CrossSolverTest PRIVATE Qt6::Core)
+    add_test(NAME CrossSolverTest COMMAND CrossSolverTest)
 endif()
 
 add_executable(CubeSolver

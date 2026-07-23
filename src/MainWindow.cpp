@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "CrossSolver.h"
 #include "CubeState.h"
 #include "CubeWidget.h"
 #include <QDir>
@@ -250,6 +251,122 @@ FaceGridObservation observeFaceGrid(
         }
     }
     return observation;
+}
+
+void mergeCubeMarkerDetections(
+    std::vector<std::vector<cv::Point2f>> &corners,
+    std::vector<int> &ids,
+    const std::vector<std::vector<cv::Point2f>> &recoveredCorners,
+    const std::vector<int> &recoveredIds){
+    for(std::size_t recovered=0;recovered<recoveredIds.size();++recovered){
+        const int id=recoveredIds[recovered];
+        if(id<0 || id>=54)
+            continue;
+        const auto existing=std::find(ids.begin(),ids.end(),id);
+        if(existing==ids.end()){
+            ids.push_back(id);
+            corners.push_back(recoveredCorners[recovered]);
+            continue;
+        }
+
+        const std::size_t index=
+            static_cast<std::size_t>(std::distance(ids.begin(),existing));
+        if(std::abs(cv::contourArea(recoveredCorners[recovered]))
+            >std::abs(cv::contourArea(corners[index])))
+            corners[index]=recoveredCorners[recovered];
+    }
+}
+
+void detectCubeMarkers(
+    const cv::Mat &frame,
+    const cv::aruco::ArucoDetector &detector,
+    std::vector<std::vector<cv::Point2f>> &corners,
+    std::vector<int> &ids){
+    detector.detectMarkers(frame,corners,ids);
+
+    std::vector<std::vector<cv::Point2f>> validCorners;
+    std::vector<int> validIds;
+    validCorners.reserve(corners.size());
+    validIds.reserve(ids.size());
+    for(std::size_t index=0;index<ids.size();++index){
+        if(ids[index]<0 || ids[index]>=54)
+            continue;
+        validIds.push_back(ids[index]);
+        validCorners.push_back(corners[index]);
+    }
+    corners=std::move(validCorners);
+    ids=std::move(validIds);
+
+    const auto centerVisible=[&ids]{
+        return std::any_of(ids.begin(),ids.end(),[](const int id){
+            return id>=0 && id<6;
+        });
+    };
+    if(ids.size()>=9 && centerVisible())
+        return;
+
+    // Recovery is deliberately lower-frequency than the normal detector.
+    // Running multiple full-resolution ArUco passes every camera frame makes
+    // the UI lag precisely when a marker is difficult to read.
+    static int recoveryFrame=0;
+    constexpr int RecoveryInterval=4;
+    if(++recoveryFrame%RecoveryInterval!=0)
+        return;
+
+    cv::Mat gray;
+    cv::cvtColor(frame,gray,cv::COLOR_BGR2GRAY);
+    cv::Rect recoveryRegion(0,0,frame.cols,frame.rows);
+    double recoveryScale=1.0;
+    if(corners.size()>=4){
+        std::vector<cv::Point2f> detectedPoints;
+        for(const auto &markerCorners:corners)
+            detectedPoints.insert(detectedPoints.end(),
+                                  markerCorners.begin(),markerCorners.end());
+        const cv::Rect detectedBounds=cv::boundingRect(detectedPoints);
+        const int padding=cvRound(
+            std::max(detectedBounds.width,detectedBounds.height)*0.65);
+        const cv::Rect expanded(detectedBounds.x-padding,
+                                detectedBounds.y-padding,
+                                detectedBounds.width+padding*2,
+                                detectedBounds.height+padding*2);
+        recoveryRegion=expanded&cv::Rect(0,0,frame.cols,frame.rows);
+        recoveryScale=2.0;
+    }
+    if(recoveryRegion.width<20 || recoveryRegion.height<20)
+        return;
+
+    cv::Mat recoveryImage;
+    cv::resize(gray(recoveryRegion),recoveryImage,cv::Size(),
+               recoveryScale,recoveryScale,cv::INTER_CUBIC);
+    static const cv::Ptr<cv::CLAHE> clahe=cv::createCLAHE(2.5,cv::Size(8,8));
+    cv::Mat enhanced;
+    clahe->apply(recoveryImage,enhanced);
+
+    static const cv::aruco::ArucoDetector recoveryDetector=[]{
+        cv::aruco::DetectorParameters recovery;
+        recovery.adaptiveThreshWinSizeMax=53;
+        recovery.adaptiveThreshWinSizeStep=5;
+        recovery.minMarkerPerimeterRate=0.008;
+        recovery.minCornerDistanceRate=0.02;
+        recovery.minMarkerDistanceRate=0.03;
+        recovery.cornerRefinementMethod=cv::aruco::CORNER_REFINE_SUBPIX;
+        recovery.perspectiveRemovePixelPerCell=8;
+        recovery.minOtsuStdDev=3.0;
+        recovery.errorCorrectionRate=0.8;
+        return cv::aruco::ArucoDetector(
+            cv::aruco::getPredefinedDictionary(cv::aruco::DICT_4X4_100),
+            recovery);
+    }();
+    std::vector<std::vector<cv::Point2f>> recoveredCorners;
+    std::vector<int> recoveredIds;
+    recoveryDetector.detectMarkers(enhanced,recoveredCorners,recoveredIds);
+    for(auto &markerCorners:recoveredCorners){
+        for(cv::Point2f &point:markerCorners){
+            point.x=static_cast<float>(point.x/recoveryScale+recoveryRegion.x);
+            point.y=static_cast<float>(point.y/recoveryScale+recoveryRegion.y);
+        }
+    }
+    mergeCubeMarkerDetections(corners,ids,recoveredCorners,recoveredIds);
 }
 
 const cv::aruco::CharucoBoard& calibrationBoard(){
@@ -550,6 +667,13 @@ MainWindow::MainWindow(){
     coachToolbar->setMovable(false);
     coachToolbar->addWidget(new QLabel("Solve Coach: ",coachToolbar));
 
+    solveMethodSelector=new QComboBox(coachToolbar);
+    solveMethodSelector->addItem("White Cross");
+    solveMethodSelector->addItem("Quick Solve");
+    solveMethodSelector->setToolTip(
+        "White Cross stops after the four white edges align with the side centers");
+    coachToolbar->addWidget(solveMethodSelector);
+
     solveCubeButton=new QPushButton("Solve",coachToolbar);
     solveCubeButton->setEnabled(false);
     coachToolbar->addWidget(solveCubeButton);
@@ -605,6 +729,8 @@ MainWindow::MainWindow(){
         resetPendingCubeScan();
         solutionMoves.clear();
         solutionMoveIndex=0;
+        crossSolutionActive=false;
+        solveMethodSelector->setEnabled(true);
         stableVerificationFrames=0;
         missedVerificationFrames=0;
         stableVerificationIds.clear();
@@ -824,28 +950,57 @@ void MainWindow::startCubeSolver(){
     if(!cubeScanIsValid() || !cubeSolver || cubeSolver->state()!=QProcess::NotRunning)
         return;
 
+    solutionMoves.clear();
+    solutionMoveIndex=0;
+    stableVerificationFrames=0;
+    missedVerificationFrames=0;
+    stableVerificationIds.clear();
+    solveCubeButton->setEnabled(false);
+    solveMethodSelector->setEnabled(false);
+    previousMoveButton->setEnabled(false);
+    nextMoveButton->setEnabled(false);
+
+    if(solveMethodSelector->currentIndex()==0){
+        crossSolutionActive=true;
+        solutionStatus->setText("Calculating a shortest white-cross solution...");
+        const auto solution=solveWhiteCross(scannedCubeFaces);
+        if(!solution){
+            solutionStatus->setText("Could not identify all four white cross edges");
+            solveCubeButton->setEnabled(true);
+            solveMethodSelector->setEnabled(true);
+            return;
+        }
+        if(solution->isEmpty()){
+            solutionStatus->setText("White cross is already complete");
+            cubeWidget->setActiveMove(QString());
+            solveCubeButton->setEnabled(true);
+            solveMethodSelector->setEnabled(true);
+            return;
+        }
+        solutionMoves=*solution;
+        solutionStatus->setToolTip("White cross solution: "+solutionMoves.join(' '));
+        updateSolutionStep();
+        return;
+    }
+
+    crossSolutionActive=false;
     QString program=QDir(QCoreApplication::applicationDirPath()).filePath("CubeSolver");
 #ifdef Q_OS_WIN
     program+=".exe";
 #endif
     if(!QFileInfo::exists(program)){
         solutionStatus->setText("Cube solver executable is missing");
+        solveCubeButton->setEnabled(true);
+        solveMethodSelector->setEnabled(true);
         return;
     }
 
-    solutionMoves.clear();
-    solutionMoveIndex=0;
-    stableVerificationFrames=0;
-    missedVerificationFrames=0;
-    stableVerificationIds.clear();
     solutionStatus->setText("Checking cube state and calculating a solution...");
-    solveCubeButton->setEnabled(false);
-    previousMoveButton->setEnabled(false);
-    nextMoveButton->setEnabled(false);
     cubeSolver->start(program,{"-p","-m"});
     if(!cubeSolver->waitForStarted(1000)){
         solutionStatus->setText("Could not start the cube solver");
         solveCubeButton->setEnabled(true);
+        solveMethodSelector->setEnabled(true);
         return;
     }
     cubeSolver->write(cubeSolverInput());
@@ -866,6 +1021,7 @@ void MainWindow::finishCubeSolver(const int exitCode,const QProcess::ExitStatus 
         solutionStatus->setText(reason);
         cubeWidget->setActiveMove(QString());
         solveCubeButton->setEnabled(true);
+        solveMethodSelector->setEnabled(true);
         return;
     }
 
@@ -879,6 +1035,7 @@ void MainWindow::finishCubeSolver(const int exitCode,const QProcess::ExitStatus 
         solutionStatus->setText("Cube is already solved");
         cubeWidget->setActiveMove(QString());
         solveCubeButton->setEnabled(true);
+        solveMethodSelector->setEnabled(true);
         return;
     }
 
@@ -903,6 +1060,7 @@ void MainWindow::finishCubeSolver(const int exitCode,const QProcess::ExitStatus 
         solutionStatus->setText("Solver returned an unreadable solution");
         cubeWidget->setActiveMove(QString());
         solveCubeButton->setEnabled(true);
+        solveMethodSelector->setEnabled(true);
         return;
     }
     solutionMoveIndex=0;
@@ -921,11 +1079,14 @@ void MainWindow::updateSolutionStep(){
         return;
     }
     if(solutionMoveIndex>=solutionMoves.size()){
-        solutionStatus->setText("Solution complete - your cube should now be solved");
+        solutionStatus->setText(crossSolutionActive
+            ? "White cross complete - all four edges align with their side centers"
+            : "Solution complete - your cube should now be solved");
         cubeWidget->setActiveMove(QString());
         previousMoveButton->setEnabled(false);
         nextMoveButton->setEnabled(false);
         solveCubeButton->setEnabled(true);
+        solveMethodSelector->setEnabled(true);
         return;
     }
 
@@ -1137,9 +1298,27 @@ void MainWindow::processAutomaticCubeScan(
         const bool centerVisible=std::any_of(ids.begin(),ids.end(),[](const int id){
             return id>=0 && id<6;
         });
-        updateCubeScanStatus(centerVisible
-            ? QString("Auto scan: align face grid (%1 markers detected)").arg(ids.size())
-            : QString("Auto scan: center marker missing (%1 markers detected)").arg(ids.size()));
+        int remainingFace=-1;
+        int remainingFaces=0;
+        for(std::size_t face=0;face<scannedCubeFaces.size();++face){
+            if(scannedCubeFaces[face][0]>=0)
+                continue;
+            remainingFace=static_cast<int>(face);
+            ++remainingFaces;
+        }
+        if(centerVisible){
+            updateCubeScanStatus(
+                QString("Auto scan: align face grid (%1 markers detected)").arg(ids.size()));
+        }else if(remainingFaces==1){
+            updateCubeScanStatus(
+                QString("Auto scan: %1 center marker missing (%2 markers detected)")
+                    .arg(cubeFaceName(remainingFace))
+                    .arg(ids.size()));
+        }else{
+            updateCubeScanStatus(
+                QString("Auto scan: center marker missing (%1 markers detected)")
+                    .arg(ids.size()));
+        }
         return;
     }
     missedCubeScanFrames=0;
@@ -1377,8 +1556,8 @@ void MainWindow::updateFrame(){
     }else{
         static const cv::aruco::DetectorParameters parameters=[]{
             cv::aruco::DetectorParameters tuned;
-            tuned.adaptiveThreshWinSizeMax=53;
-            tuned.adaptiveThreshWinSizeStep=4;
+            tuned.adaptiveThreshWinSizeMax=31;
+            tuned.adaptiveThreshWinSizeStep=7;
             tuned.minMarkerPerimeterRate=0.015;
             tuned.minCornerDistanceRate=0.03;
             tuned.minMarkerDistanceRate=0.05;
@@ -1396,7 +1575,10 @@ void MainWindow::updateFrame(){
 
         std::vector<std::vector<cv::Point2f>> corners;
         std::vector<int> ids;
-        detector.detectMarkers(frame,corners,ids);
+        if(use5x5)
+            detector.detectMarkers(frame,corners,ids);
+        else
+            detectCubeMarkers(frame,detector,corners,ids);
         if(!use5x5){
             lastMarkerIds=ids;
             processAutomaticMoveVerification(ids);
