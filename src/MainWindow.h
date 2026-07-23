@@ -25,6 +25,8 @@ private:
     QString calibrationFilePath() const;
     void captureCubeFace(const std::vector<std::vector<cv::Point2f>> &corners,
                          const std::vector<int> &ids);
+    void commitCubeFace(int face,const std::array<int,9> &markers);
+    void resetPendingCubeScan();
     void processAutomaticCubeScan(
         const std::vector<std::vector<cv::Point2f>> &corners,
         const std::vector<int> &ids);
@@ -64,8 +66,11 @@ private:
     std::vector<std::vector<cv::Point2f>> calibrationSamples;
     std::vector<std::vector<int>> calibrationSampleIds;
     bool automaticCubeScan=false;
-    int stableCubeScanFrames=0;
-    std::vector<int> stableCubeScanIds;
+    int missedCubeScanFrames=0;
+    int pendingCubeScanFace=-1;
+    std::array<int,9> pendingCubeScanIds;
+    std::array<int,9> pendingCubeScanCounts;
+    std::vector<cv::Point2f> pendingCubeScanCenterCorners;
     std::array<std::array<int,9>,6> scannedCubeFaces;
     QProcess *cubeSolver=nullptr;
     QStringList solutionMoves;

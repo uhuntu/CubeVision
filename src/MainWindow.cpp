@@ -17,6 +17,7 @@
 #include <opencv2/objdetect/charuco_detector.hpp>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numeric>
 
 namespace {
@@ -31,6 +32,225 @@ constexpr float Marker4x4SizeMeters=0.010F;
 constexpr int CaptureWidth=1920;
 constexpr int CaptureHeight=1080;
 constexpr int CaptureFramesPerSecond=30;
+
+struct FaceMarkerSelection{
+    std::size_t centerIndex=0;
+    std::vector<std::size_t> indices;
+
+    bool isValid() const{
+        return indices.size()==9;
+    }
+};
+
+struct FaceGridObservation{
+    int face=-1;
+    std::array<int,9> ids;
+    std::vector<std::size_t> indices;
+
+    FaceGridObservation(){
+        ids.fill(-1);
+    }
+
+    int visibleCount() const{
+        return static_cast<int>(std::count_if(ids.begin(),ids.end(),
+                                              [](const int id){ return id>=0; }));
+    }
+
+    bool isValid() const{
+        return face>=0 && visibleCount()>=5;
+    }
+};
+
+cv::Point2f markerCenter(
+    const std::vector<std::vector<cv::Point2f>> &corners,
+    const std::size_t index){
+    cv::Point2f center;
+    for(const cv::Point2f &corner:corners[index])
+        center+=corner;
+    return center*(1.0F/static_cast<float>(corners[index].size()));
+}
+
+FaceMarkerSelection selectFaceMarkers(
+    const std::vector<std::vector<cv::Point2f>> &corners,
+    const std::vector<int> &ids){
+    FaceMarkerSelection selection;
+    if(ids.size()<9 || corners.size()!=ids.size())
+        return selection;
+
+    std::size_t centerIndex=ids.size();
+    double largestCenterArea=0.0;
+    for(std::size_t index=0;index<ids.size();++index){
+        if(ids[index]<0 || ids[index]>=6)
+            continue;
+        const double area=std::abs(cv::contourArea(corners[index]));
+        if(area>largestCenterArea){
+            largestCenterArea=area;
+            centerIndex=index;
+        }
+    }
+    if(centerIndex==ids.size())
+        return selection;
+
+    const cv::Point2f faceCenter=markerCenter(corners,centerIndex);
+    selection.indices.resize(ids.size());
+    std::iota(selection.indices.begin(),selection.indices.end(),0);
+    std::sort(selection.indices.begin(),selection.indices.end(),
+              [&corners,&faceCenter](const std::size_t left,const std::size_t right){
+        return cv::norm(markerCenter(corners,left)-faceCenter)
+            <cv::norm(markerCenter(corners,right)-faceCenter);
+    });
+    selection.indices.resize(9);
+
+    const int selectedCenters=static_cast<int>(std::count_if(
+        selection.indices.begin(),selection.indices.end(),
+        [&ids](const std::size_t index){
+            return ids[index]>=0 && ids[index]<6;
+        }));
+    if(selectedCenters!=1){
+        selection.indices.clear();
+        return selection;
+    }
+
+    selection.centerIndex=centerIndex;
+    return selection;
+}
+
+FaceGridObservation orderCompleteFaceGrid(
+    const std::vector<std::vector<cv::Point2f>> &corners,
+    const std::vector<int> &ids){
+    FaceGridObservation observation;
+    const FaceMarkerSelection selection=selectFaceMarkers(corners,ids);
+    if(!selection.isValid())
+        return observation;
+
+    const std::size_t centerIndex=selection.centerIndex;
+    const auto &centerCorners=corners[centerIndex];
+    const cv::Point2f faceCenter=markerCenter(corners,centerIndex);
+    const cv::Point2f xAxis=(centerCorners[1]+centerCorners[2])
+        -(centerCorners[0]+centerCorners[3]);
+    const cv::Point2f yAxis=(centerCorners[2]+centerCorners[3])
+        -(centerCorners[0]+centerCorners[1]);
+    if(cv::norm(xAxis)<1.0 || cv::norm(yAxis)<1.0)
+        return observation;
+
+    struct ProjectedMarker{
+        std::size_t index;
+        float x;
+        float y;
+    };
+    std::vector<ProjectedMarker> projected;
+    projected.reserve(9);
+    for(const std::size_t index:selection.indices){
+        if(ids[index]<0 || ids[index]>=54)
+            return observation;
+        const cv::Point2f offset=markerCenter(corners,index)-faceCenter;
+        projected.push_back({index,
+                             offset.dot(xAxis)/xAxis.dot(xAxis),
+                             offset.dot(yAxis)/yAxis.dot(yAxis)});
+    }
+
+    // Perspective changes distances but preserves the ordering of the three
+    // rows and the three markers within each row.  Ordering avoids rejecting
+    // a complete tilted face because an outer marker crossed a fixed limit.
+    std::sort(projected.begin(),projected.end(),[](const auto &left,const auto &right){
+        return left.y<right.y;
+    });
+    for(std::size_t row=0;row<3;++row){
+        const auto begin=projected.begin()+static_cast<std::ptrdiff_t>(row*3);
+        std::sort(begin,begin+3,[](const auto &left,const auto &right){
+            return left.x<right.x;
+        });
+    }
+    if(projected[4].index!=centerIndex)
+        return observation;
+
+    observation.face=ids[centerIndex];
+    for(std::size_t position=0;position<projected.size();++position){
+        observation.ids[position]=ids[projected[position].index];
+        observation.indices.push_back(projected[position].index);
+    }
+    return observation;
+}
+
+FaceGridObservation observeFaceGrid(
+    const std::vector<std::vector<cv::Point2f>> &corners,
+    const std::vector<int> &ids){
+    FaceGridObservation observation;
+    if(corners.size()!=ids.size() || ids.empty())
+        return observation;
+
+    std::size_t centerIndex=ids.size();
+    double largestCenterArea=0.0;
+    for(std::size_t index=0;index<ids.size();++index){
+        if(ids[index]<0 || ids[index]>=6)
+            continue;
+        const double area=std::abs(cv::contourArea(corners[index]));
+        if(area>largestCenterArea){
+            largestCenterArea=area;
+            centerIndex=index;
+        }
+    }
+    if(centerIndex==ids.size())
+        return observation;
+
+    const auto &centerCorners=corners[centerIndex];
+    const cv::Point2f faceCenter=markerCenter(corners,centerIndex);
+    const cv::Point2f xAxis=(centerCorners[1]+centerCorners[2])
+        -(centerCorners[0]+centerCorners[3]);
+    const cv::Point2f yAxis=(centerCorners[2]+centerCorners[3])
+        -(centerCorners[0]+centerCorners[1]);
+    if(cv::norm(xAxis)<1.0 || cv::norm(yAxis)<1.0)
+        return observation;
+
+    // Adjacent sticker centers are approximately half a center-marker axis
+    // from the origin.  Classifying in this normalized coordinate system
+    // lets observations from moving camera frames fill the same 3x3 cells.
+    constexpr float CellCenterDistance=0.55F;
+    constexpr float CellBoundary=0.25F;
+    constexpr float MaximumFaceCoordinate=0.90F;
+    std::array<float,9> bestScores;
+    bestScores.fill(std::numeric_limits<float>::max());
+
+    for(std::size_t index=0;index<ids.size();++index){
+        if(ids[index]<0 || ids[index]>=54)
+            continue;
+        if(ids[index]<6 && index!=centerIndex)
+            continue;
+
+        const cv::Point2f offset=markerCenter(corners,index)-faceCenter;
+        const float x=offset.dot(xAxis)/xAxis.dot(xAxis);
+        const float y=offset.dot(yAxis)/yAxis.dot(yAxis);
+        if(std::abs(x)>MaximumFaceCoordinate || std::abs(y)>MaximumFaceCoordinate)
+            continue;
+
+        const int column=x<-CellBoundary ? 0 : x>CellBoundary ? 2 : 1;
+        const int row=y<-CellBoundary ? 0 : y>CellBoundary ? 2 : 1;
+        const int position=row*3+column;
+        if((position==4)!=(index==centerIndex))
+            continue;
+
+        const float expectedX=(column-1)*CellCenterDistance;
+        const float expectedY=(row-1)*CellCenterDistance;
+        const float score=std::abs(x-expectedX)+std::abs(y-expectedY);
+        if(score>=bestScores[position])
+            continue;
+        bestScores[position]=score;
+        observation.ids[position]=ids[index];
+    }
+
+    observation.face=ids[centerIndex];
+    for(std::size_t position=0;position<observation.ids.size();++position){
+        if(observation.ids[position]<0)
+            continue;
+        for(std::size_t index=0;index<ids.size();++index){
+            if(ids[index]==observation.ids[position]){
+                observation.indices.push_back(index);
+                break;
+            }
+        }
+    }
+    return observation;
+}
 
 const cv::aruco::CharucoBoard& calibrationBoard(){
     static const cv::aruco::CharucoBoard board(
@@ -369,8 +589,7 @@ MainWindow::MainWindow(){
     });
     connect(captureCubeFaceButton,&QPushButton::toggled,this,[this](const bool enabled){
         automaticCubeScan=enabled;
-        stableCubeScanFrames=0;
-        stableCubeScanIds.clear();
+        resetPendingCubeScan();
         captureCubeFaceButton->setText(enabled ? "Stop auto scan" : "Auto scan");
         if(enabled){
             calibrationModeButton->setChecked(false);
@@ -383,8 +602,7 @@ MainWindow::MainWindow(){
     connect(resetCubeScanButton,&QPushButton::clicked,this,[this]{
         for(auto &face:scannedCubeFaces)
             face.fill(-1);
-        stableCubeScanFrames=0;
-        stableCubeScanIds.clear();
+        resetPendingCubeScan();
         solutionMoves.clear();
         solutionMoveIndex=0;
         stableVerificationFrames=0;
@@ -435,6 +653,7 @@ MainWindow::MainWindow(){
 
     for(auto &face:scannedCubeFaces)
         face.fill(-1);
+    resetPendingCubeScan();
     cubeWidget->setCubeState(scannedCubeFaces);
     updateCubeScanStatus();
     captureCubeFaceButton->setChecked(true);
@@ -868,164 +1087,179 @@ void MainWindow::verifySolutionMove(){
     solutionStatus->setText("Face does not match the expected state; undo the last action and retry");
 }
 
+void MainWindow::resetPendingCubeScan(){
+    missedCubeScanFrames=0;
+    pendingCubeScanFace=-1;
+    pendingCubeScanIds.fill(-1);
+    pendingCubeScanCounts.fill(0);
+    pendingCubeScanCenterCorners.clear();
+}
+
 void MainWindow::processAutomaticCubeScan(
     const std::vector<std::vector<cv::Point2f>> &corners,
     const std::vector<int> &ids){
-    constexpr int RequiredStableFrames=8;
+    constexpr int RequiredObservationsPerMarker=2;
+    constexpr int AllowedMissedFrames=12;
     if(!automaticCubeScan)
         return;
-    if(ids.size()!=9){
-        stableCubeScanFrames=0;
-        stableCubeScanIds.clear();
-        updateCubeScanStatus(
-            QString("Auto scan: show exactly one face (%1/9 markers visible)")
-                .arg(ids.size()));
-        return;
-    }
 
-    int center=-1;
-    int centerCount=0;
-    for(const int id:ids){
-        if(id>=0 && id<6){
-            center=id;
-            ++centerCount;
+    FaceGridObservation observation=orderCompleteFaceGrid(corners,ids);
+    if(!observation.isValid())
+        observation=observeFaceGrid(corners,ids);
+    const bool centerObserved=observation.face>=0;
+    std::vector<cv::Point2f> observedCenterCorners;
+    if(centerObserved){
+        const auto center=std::find(ids.begin(),ids.end(),observation.face);
+        if(center!=ids.end())
+            observedCenterCorners=corners[
+                static_cast<std::size_t>(std::distance(ids.begin(),center))];
+    }else if(pendingCubeScanFace>=0 && pendingCubeScanCenterCorners.size()==4){
+        // Reuse a recent center pose while the cube is held steady.  The
+        // synthetic center anchors the grid only; it is removed from the
+        // observation so a missing center is never falsely confirmed.
+        auto anchoredCorners=corners;
+        auto anchoredIds=ids;
+        anchoredCorners.push_back(pendingCubeScanCenterCorners);
+        anchoredIds.push_back(pendingCubeScanFace);
+        observation=observeFaceGrid(anchoredCorners,anchoredIds);
+        if(observation.face==pendingCubeScanFace){
+            observation.ids[4]=-1;
+            observation.indices.erase(
+                std::remove(observation.indices.begin(),observation.indices.end(),
+                            anchoredIds.size()-1),
+                observation.indices.end());
         }
     }
-    if(centerCount!=1){
-        stableCubeScanFrames=0;
-        stableCubeScanIds.clear();
-        updateCubeScanStatus("Auto scan: aim one face directly at the camera");
+
+    if(!observation.isValid()){
+        if(++missedCubeScanFrames>AllowedMissedFrames)
+            resetPendingCubeScan();
+        const bool centerVisible=std::any_of(ids.begin(),ids.end(),[](const int id){
+            return id>=0 && id<6;
+        });
+        updateCubeScanStatus(centerVisible
+            ? QString("Auto scan: align face grid (%1 markers detected)").arg(ids.size())
+            : QString("Auto scan: center marker missing (%1 markers detected)").arg(ids.size()));
         return;
     }
-    if(scannedCubeFaces[center][0]>=0){
-        stableCubeScanFrames=0;
-        stableCubeScanIds.clear();
+    missedCubeScanFrames=0;
+
+    if(scannedCubeFaces[observation.face][0]>=0){
+        resetPendingCubeScan();
         updateCubeScanStatus(
             QString("%1 face already scanned - show a different face")
-                .arg(cubeFaceName(center)));
+                .arg(cubeFaceName(observation.face)));
         return;
     }
 
-    std::vector<int> signature=ids;
-    std::sort(signature.begin(),signature.end());
-    if(signature!=stableCubeScanIds){
-        stableCubeScanIds=std::move(signature);
-        stableCubeScanFrames=1;
-    }else{
-        ++stableCubeScanFrames;
+    if(pendingCubeScanFace!=observation.face){
+        resetPendingCubeScan();
+        pendingCubeScanFace=observation.face;
     }
-    if(stableCubeScanFrames<RequiredStableFrames){
+    if(centerObserved)
+        pendingCubeScanCenterCorners=std::move(observedCenterCorners);
+
+    auto markerAlreadyScanned=[this](const int markerId){
+        return std::any_of(
+            scannedCubeFaces.begin(),scannedCubeFaces.end(),
+            [markerId](const auto &face){
+                return std::find(face.begin(),face.end(),markerId)!=face.end();
+            });
+    };
+    for(std::size_t position=0;position<observation.ids.size();++position){
+        const int observedId=observation.ids[position];
+        if(observedId<0 || markerAlreadyScanned(observedId))
+            continue;
+
+        // A marker can move between classified cells as perspective changes.
+        // Keep only its newest cell so temporal accumulation can never create
+        // two copies of one physical sticker on the same face.
+        for(std::size_t other=0;other<pendingCubeScanIds.size();++other){
+            if(other==position || pendingCubeScanIds[other]!=observedId)
+                continue;
+            pendingCubeScanIds[other]=-1;
+            pendingCubeScanCounts[other]=0;
+        }
+
+        if(pendingCubeScanIds[position]!=observedId){
+            pendingCubeScanIds[position]=observedId;
+            pendingCubeScanCounts[position]=1;
+        }else if(pendingCubeScanCounts[position]<RequiredObservationsPerMarker){
+            ++pendingCubeScanCounts[position];
+        }
+    }
+
+    const int collected=static_cast<int>(std::count_if(
+        pendingCubeScanIds.begin(),pendingCubeScanIds.end(),
+        [](const int id){ return id>=0; }));
+    const int confirmed=static_cast<int>(std::count_if(
+        pendingCubeScanCounts.begin(),pendingCubeScanCounts.end(),
+        [](const int count){ return count>=RequiredObservationsPerMarker; }));
+    if(confirmed<9){
         updateCubeScanStatus(
-            QString("Hold %1 face steady... %2/%3")
-                .arg(cubeFaceName(center))
-                .arg(stableCubeScanFrames)
-                .arg(RequiredStableFrames));
+            QString("Collecting %1 face: %2/9 found, %3/9 confirmed")
+                .arg(cubeFaceName(observation.face))
+                .arg(collected)
+                .arg(confirmed));
         return;
     }
 
-    stableCubeScanFrames=0;
-    stableCubeScanIds.clear();
-    captureCubeFace(corners,ids);
+    const int face=pendingCubeScanFace;
+    const std::array<int,9> markers=pendingCubeScanIds;
+    resetPendingCubeScan();
+    commitCubeFace(face,markers);
 }
 
 void MainWindow::captureCubeFace(
     const std::vector<std::vector<cv::Point2f>> &corners,
     const std::vector<int> &ids){
-    if(ids.size()!=9){
+    if(ids.size()<9){
         updateCubeScanStatus(
-            QString("Show only one complete face: exactly 9 markers required (%1 found)")
+            QString("Show one complete face: at least 9 markers required (%1 found)")
                 .arg(ids.size()));
         return;
     }
 
-    auto markerCenter=[&corners](const std::size_t index){
-        cv::Point2f center;
-        for(const cv::Point2f &corner:corners[index])
-            center+=corner;
-        return center*(1.0F/static_cast<float>(corners[index].size()));
-    };
-
-    // The face being presented is identified by its center sticker (IDs 0-5).
-    // If an adjacent center is visible, the largest one belongs to the face
-    // aimed most directly at the camera.
-    std::size_t centerIndex=ids.size();
-    double largestCenterArea=0.0;
-    for(std::size_t index=0;index<ids.size();++index){
-        if(ids[index]<0 || ids[index]>=6)
-            continue;
-        const double area=std::abs(cv::contourArea(corners[index]));
-        if(area>largestCenterArea){
-            largestCenterArea=area;
-            centerIndex=index;
-        }
-    }
-    if(centerIndex==ids.size()){
-        updateCubeScanStatus("No center marker found (expected an ID from 0 to 5)");
+    const FaceGridObservation observation=orderCompleteFaceGrid(corners,ids);
+    if(!observation.isValid()){
+        const bool centerVisible=std::any_of(ids.begin(),ids.end(),[](const int id){
+            return id>=0 && id<6;
+        });
+        if(centerVisible)
+            updateCubeScanStatus(
+                "Show one face more directly; adjacent face centers are too close");
+        else
+            updateCubeScanStatus("No center marker found (expected an ID from 0 to 5)");
         return;
     }
+    commitCubeFace(observation.face,observation.ids);
+}
 
-    const cv::Point2f faceCenter=markerCenter(centerIndex);
-    std::vector<std::size_t> nearest(ids.size());
-    std::iota(nearest.begin(),nearest.end(),0);
-    std::sort(nearest.begin(),nearest.end(),[&](const std::size_t left,const std::size_t right){
-        return cv::norm(markerCenter(left)-faceCenter)<cv::norm(markerCenter(right)-faceCenter);
-    });
-    nearest.resize(9);
-
-    int selectedCenters=0;
-    for(const std::size_t index:nearest){
-        if(ids[index]<0 || ids[index]>=54){
-            updateCubeScanStatus("A detected marker is outside the CubeNet ID range 0-53");
+void MainWindow::commitCubeFace(
+    const int face,
+    const std::array<int,9> &markers){
+    std::array<bool,54> usedIds{};
+    for(std::size_t existingFace=0;existingFace<scannedCubeFaces.size();++existingFace){
+        if(static_cast<int>(existingFace)==face)
+            continue;
+        for(const int id:scannedCubeFaces[existingFace]){
+            if(id>=0 && id<static_cast<int>(usedIds.size()))
+                usedIds[id]=true;
+        }
+    }
+    for(const int id:markers){
+        if(id<0 || id>=static_cast<int>(usedIds.size()) || usedIds[id]){
+            resetPendingCubeScan();
+            updateCubeScanStatus(
+                QString("Rejected %1 face: marker ID %2 is duplicated; hold one face steady")
+                    .arg(cubeFaceName(face))
+                    .arg(id));
             return;
         }
-        selectedCenters+=ids[index]<6 ? 1 : 0;
-    }
-    if(selectedCenters!=1){
-        updateCubeScanStatus("Show one face more directly; markers from another center are too close");
-        return;
+        usedIds[id]=true;
     }
 
-    const auto &centerCorners=corners[centerIndex];
-    const cv::Point2f xAxis=(centerCorners[1]+centerCorners[2])
-        -(centerCorners[0]+centerCorners[3]);
-    const cv::Point2f yAxis=(centerCorners[2]+centerCorners[3])
-        -(centerCorners[0]+centerCorners[1]);
-    if(cv::norm(xAxis)<1.0 || cv::norm(yAxis)<1.0){
-        updateCubeScanStatus("Center marker is too small to determine face orientation");
-        return;
-    }
-
-    struct ProjectedMarker{
-        std::size_t index;
-        float x;
-        float y;
-    };
-    std::vector<ProjectedMarker> projected;
-    projected.reserve(9);
-    for(const std::size_t index:nearest){
-        const cv::Point2f offset=markerCenter(index)-faceCenter;
-        projected.push_back({index,
-                             offset.dot(xAxis)/xAxis.dot(xAxis),
-                             offset.dot(yAxis)/yAxis.dot(yAxis)});
-    }
-    std::sort(projected.begin(),projected.end(),[](const auto &left,const auto &right){
-        return left.y<right.y;
-    });
-    for(std::size_t row=0;row<3;++row){
-        const auto begin=projected.begin()+static_cast<std::ptrdiff_t>(row*3);
-        std::sort(begin,begin+3,[](const auto &left,const auto &right){
-            return left.x<right.x;
-        });
-    }
-
-    if(projected[4].index!=centerIndex){
-        updateCubeScanStatus("Face is too tilted; keep all nine stickers square to the camera");
-        return;
-    }
-
-    const int face=ids[centerIndex];
-    for(std::size_t position=0;position<projected.size();++position)
-        scannedCubeFaces[face][position]=ids[projected[position].index];
+    scannedCubeFaces[face]=markers;
     cubeWidget->setCubeState(scannedCubeFaces);
     if(cubeScanIsValid()){
         captureCubeFaceButton->setChecked(false);
@@ -1037,6 +1271,18 @@ void MainWindow::captureCubeFace(
             updateCubeScanStatus("Markers form an impossible cube; reset and rescan carefully");
         }
     }else{
+        const bool allFacesPresent=std::all_of(
+            scannedCubeFaces.begin(),scannedCubeFaces.end(),
+            [](const auto &scannedFace){ return scannedFace[0]>=0; });
+        if(allFacesPresent){
+            scannedCubeFaces[face].fill(-1);
+            cubeWidget->setCubeState(scannedCubeFaces);
+            resetPendingCubeScan();
+            updateCubeScanStatus(
+                QString("Rejected %1 face: marker set conflicts with earlier scans; show it again")
+                    .arg(cubeFaceName(face)));
+            return;
+        }
         updateCubeScanStatus(QString("Scanned %1 face").arg(cubeFaceName(face)));
     }
 }
@@ -1129,7 +1375,16 @@ void MainWindow::updateFrame(){
                     .arg(MinimumCalibrationSamples));
         }
     }else{
-        static cv::aruco::DetectorParameters parameters;
+        static const cv::aruco::DetectorParameters parameters=[]{
+            cv::aruco::DetectorParameters tuned;
+            tuned.adaptiveThreshWinSizeMax=53;
+            tuned.adaptiveThreshWinSizeStep=4;
+            tuned.minMarkerPerimeterRate=0.015;
+            tuned.minCornerDistanceRate=0.03;
+            tuned.minMarkerDistanceRate=0.05;
+            tuned.cornerRefinementMethod=cv::aruco::CORNER_REFINE_SUBPIX;
+            return tuned;
+        }();
         static cv::aruco::ArucoDetector detector5x5(
             cv::aruco::getPredefinedDictionary(cv::aruco::DICT_5X5_100),parameters);
         static cv::aruco::ArucoDetector detector4x4(
@@ -1177,6 +1432,39 @@ void MainWindow::updateFrame(){
                                 0.65,cv::Scalar(0,0,0),4,cv::LINE_AA);
                     cv::putText(frame,label,labelPosition,cv::FONT_HERSHEY_SIMPLEX,
                                 0.65,color,2,cv::LINE_AA);
+                }
+
+                if(automaticCubeScan){
+                    FaceGridObservation observation=orderCompleteFaceGrid(corners,ids);
+                    if(!observation.isValid())
+                        observation=observeFaceGrid(corners,ids);
+                    if(observation.isValid()){
+                        std::vector<cv::Point2f> facePoints;
+                        for(const std::size_t index:observation.indices)
+                            facePoints.insert(facePoints.end(),
+                                              corners[index].begin(),
+                                              corners[index].end());
+
+                        std::vector<cv::Point2f> faceHull;
+                        cv::convexHull(facePoints,faceHull);
+                        std::vector<cv::Point> outline;
+                        outline.reserve(faceHull.size());
+                        for(const cv::Point2f &point:faceHull)
+                            outline.emplace_back(cvRound(point.x),cvRound(point.y));
+                        cv::polylines(frame,outline,true,cv::Scalar(0,255,0),6,cv::LINE_AA);
+
+                        const std::string targetLabel=std::string("TARGET ")
+                            +cubeFaceName(observation.face)+" FACE";
+                        const cv::Point labelPosition=outline.empty()
+                            ? cv::Point(20,50)
+                            : outline.front()+cv::Point(0,-18);
+                        cv::putText(frame,targetLabel,labelPosition,
+                                    cv::FONT_HERSHEY_SIMPLEX,0.85,
+                                    cv::Scalar(0,0,0),5,cv::LINE_AA);
+                        cv::putText(frame,targetLabel,labelPosition,
+                                    cv::FONT_HERSHEY_SIMPLEX,0.85,
+                                    cv::Scalar(0,255,0),2,cv::LINE_AA);
+                    }
                 }
             }
 
