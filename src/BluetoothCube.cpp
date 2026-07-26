@@ -91,7 +91,9 @@ void BluetoothCube::connectToCube(const QString &macAddress){
     }
     QBluetoothDeviceInfo info(address,"Mi Smart Magic Cube",0);
     info.setServiceUuids({XiaomiServiceUuid});
-    qDebug()<<"[BluetoothCube] direct connect to"<<address.toString();
+    info.setCoreConfigurations(QBluetoothDeviceInfo::LowEnergyCoreConfiguration);
+    qDebug()<<"[BluetoothCube] direct connect to"<<address.toString()
+            <<"coreConfigs="<<info.coreConfigurations();
     matchingDeviceFound=true;
     beginConnection(info);
 #else
@@ -157,8 +159,10 @@ void BluetoothCube::beginConnection(const QBluetoothDeviceInfo &info){
         emit statusChanged("Bluetooth cube disconnected");
     });
     connect(controller,&QLowEnergyController::errorOccurred,
-            this,[this](QLowEnergyController::Error){
-        emit statusChanged("Bluetooth connection failed: "+controller->errorString());
+            this,[this](QLowEnergyController::Error error){
+        qDebug()<<"[BluetoothCube] connection error:"<<error<<controller->errorString();
+        emit statusChanged("Bluetooth connection failed ["+QString::number(static_cast<int>(error))+
+                           "]: "+controller->errorString());
     });
     controller->connectToDevice();
 }
