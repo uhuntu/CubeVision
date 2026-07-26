@@ -114,6 +114,7 @@ void BluetoothCube::disconnectFromCube(){
         dataService=nullptr;
     }
     previousFaces.reset();
+    physicalFaces.reset();
     emit connectedChanged(false);
     emit statusChanged("Bluetooth cube disconnected");
 #endif
@@ -275,6 +276,26 @@ static QString remapMiCubeMove(const QString &move){
     return result;
 }
 
+static CubeFaces solvedCubeFaces(){
+    return {{{{0,0,0,0,0,0,0,0,0}},
+             {{1,1,1,1,1,1,1,1,1}},
+             {{2,2,2,2,2,2,2,2,2}},
+             {{3,3,3,3,3,3,3,3,3}},
+             {{4,4,4,4,4,4,4,4,4}},
+             {{5,5,5,5,5,5,5,5,5}}}};
+}
+
+static CubeFaces applyMoveString(const CubeFaces &faces,const QString &move){
+    if(move.isEmpty()) return faces;
+    const QChar face=move.front().toUpper();
+    int turns=1;
+    if(move.size()>1){
+        if(move[1]=='2') turns=2;
+        else if(move[1]=='\'') turns=3;
+    }
+    return applyCubeMove(faces,face,turns);
+}
+
 void BluetoothCube::acceptPacket(const QByteArray &packet){
     qDebug()<<"[BluetoothCube] packet received, len="<<packet.size()
             <<"hex="<<packet.toHex();
@@ -300,6 +321,16 @@ void BluetoothCube::acceptPacket(const QByteArray &packet){
     previousFaces=state->faces;
     const QString remappedMove=remapMiCubeMove(move);
     qDebug()<<"[BluetoothCube] final lastMove="<<move<<"remapped="<<remappedMove;
-    emit cubeStateChanged(state->faces,remappedMove);
+    QString emittedMove=remappedMove;
+    if(!physicalFaces){
+        // The first packet after connect carries the current cube state, but its
+        // lastMove field may be stale (the move before sleep/wake). Start from a
+        // solved physical state and do not apply that first move.
+        physicalFaces=solvedCubeFaces();
+        emittedMove.clear();
+    }else{
+        *physicalFaces=applyMoveString(*physicalFaces,remappedMove);
+    }
+    emit cubeStateChanged(*physicalFaces,emittedMove);
 }
 #endif

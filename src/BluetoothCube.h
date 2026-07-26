@@ -36,6 +36,7 @@ private:
     QLowEnergyService *dataService=nullptr;
     bool matchingDeviceFound=false;
     std::optional<CubeFaces> previousFaces;
+    std::optional<CubeFaces> physicalFaces;
 #endif
 };
 
