@@ -191,35 +191,49 @@ void BluetoothCube::serviceScanFinished(){
             acceptPacket(value);
     });
     connect(dataService,&QLowEnergyService::errorOccurred,this,
-            [this](QLowEnergyService::ServiceError){
-        emit statusChanged("Bluetooth cube service error");
+            [this](QLowEnergyService::ServiceError error){
+        qDebug()<<"[BluetoothCube] service error:"<<error;
+        emit statusChanged("Bluetooth cube service error ["+
+                           QString::number(static_cast<int>(error))+"]");
     });
     dataService->discoverDetails();
 }
 
 void BluetoothCube::serviceStateChanged(const int state){
+    qDebug()<<"[BluetoothCube] service state changed:"<<state;
     if(state!=static_cast<int>(QLowEnergyService::RemoteServiceDiscovered))
         return;
     const auto characteristic=dataService->characteristic(DataCharacteristicUuid);
+    qDebug()<<"[BluetoothCube] characteristic valid="<<characteristic.isValid()
+            <<"props="<<characteristic.properties();
     if(!characteristic.isValid()){
         emit statusChanged("Mi cube state characteristic was not found");
         return;
     }
     const auto notification=characteristic.clientCharacteristicConfiguration();
-    if(notification.isValid())
+    qDebug()<<"[BluetoothCube] CCCD valid="<<notification.isValid();
+    if(notification.isValid()){
+        qDebug()<<"[BluetoothCube] enabling notifications";
         dataService->writeDescriptor(
             notification,QLowEnergyCharacteristic::CCCDEnableNotification);
-    dataService->readCharacteristic(characteristic);
+    }else{
+        qDebug()<<"[BluetoothCube] CCCD not valid, trying direct read";
+        dataService->readCharacteristic(characteristic);
+    }
     emit connectedChanged(true);
     emit statusChanged("Mi Bluetooth cube connected; twist any face to sync");
 }
 
 void BluetoothCube::acceptPacket(const QByteArray &packet){
+    qDebug()<<"[BluetoothCube] packet received, len="<<packet.size()
+            <<"hex="<<packet.toHex();
     const auto state=decodeMiCubePacket(packet);
     if(!state){
+        qDebug()<<"[BluetoothCube] packet decode failed";
         emit statusChanged("Received an invalid Mi cube state packet");
         return;
     }
+    qDebug()<<"[BluetoothCube] packet decoded, lastMove="<<state->lastMove;
     emit cubeStateChanged(state->faces,state->lastMove);
 }
 #endif
