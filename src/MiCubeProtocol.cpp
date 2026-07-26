@@ -211,8 +211,10 @@ std::optional<MiCubeState> decodeMiCubePacket(const QByteArray &packet){
                 =GiikerEdgeFacelets[cubie][sticker]/9;
     }
 
-    // Convert URFDLB to CubeVision's UDLRFB face order.
-    static constexpr std::array<int,6> standardToCubeVision={{0,3,4,1,2,5}};
+    // Convert the Mi Smart Magic Cube's facelet order to CubeVision's UDLRFB
+    // face order. The Mi cube reports faces with U/D, R/F and L/B swapped
+    // relative to the Giiker-style URFDLB order assumed by the decoder tables.
+    static constexpr std::array<int,6> standardToCubeVision={{1,4,3,0,5,2}};
     CubeFaces colors;
     for(int standardFace=0;standardFace<6;++standardFace){
         const int cubeVisionFace=standardToCubeVision[standardFace];
@@ -220,18 +222,7 @@ std::optional<MiCubeState> decodeMiCubePacket(const QByteArray &packet){
             colors[cubeVisionFace][position]=
                 standardToCubeVision[standardColors[standardFace*9+position]];
     }
-
-    // Mi Smart Magic Cube reports facelets with U/D and R/F (and L/B) swapped
-    // relative to CubeVision's coordinate system. Remap so physical faces align.
-    static constexpr std::array<int,6> miCubeToCubeVision={{1,0,5,4,3,2}};
-    CubeFaces remappedColors;
-    for(int face=0;face<6;++face){
-        const int sourceFace=miCubeToCubeVision[face];
-        for(int position=0;position<9;++position)
-            remappedColors[face][position]=colors[sourceFace][position];
-    }
-
-    CubeFaces faces=markerFacesFromColors(remappedColors);
+    CubeFaces faces=markerFacesFromColors(colors);
     for(const auto &face:faces)
         if(std::find(face.begin(),face.end(),-1)!=face.end())
             return std::nullopt;
