@@ -253,6 +253,28 @@ static QString changedFaceIndices(const CubeFaces &previous,const CubeFaces &cur
     return changed.join(',');
 }
 
+// The Mi Smart Magic Cube's firmware uses a face coordinate system that is
+// rotated 120 degrees around a body diagonal relative to the physical cube.
+// Observed mapping (physical twist -> reported/displayed move before remap):
+//   U<->D, L<->B, R<->F
+static QString remapMiCubeMove(const QString &move){
+    if(move.isEmpty()) return move;
+    static constexpr std::array<int,6> remap={{'D','U','B','F','R','L'}};
+    static constexpr std::array<char,6> faces={{'U','D','L','R','F','B'}};
+    const char faceChar = move[0].toUpper().toLatin1();
+    int index=-1;
+    for(int i=0;i<6;++i){
+        if(faces[i]==faceChar){
+            index=i;
+            break;
+        }
+    }
+    if(index<0) return move;
+    QString result=move;
+    result[0]=QChar(remap[index]);
+    return result;
+}
+
 void BluetoothCube::acceptPacket(const QByteArray &packet){
     qDebug()<<"[BluetoothCube] packet received, len="<<packet.size()
             <<"hex="<<packet.toHex();
@@ -276,7 +298,8 @@ void BluetoothCube::acceptPacket(const QByteArray &packet){
         qDebug()<<"[BluetoothCube] first packet, packet move="<<move;
     }
     previousFaces=state->faces;
-    qDebug()<<"[BluetoothCube] final lastMove="<<move;
-    emit cubeStateChanged(state->faces,move);
+    const QString remappedMove=remapMiCubeMove(move);
+    qDebug()<<"[BluetoothCube] final lastMove="<<move<<"remapped="<<remappedMove;
+    emit cubeStateChanged(state->faces,remappedMove);
 }
 #endif

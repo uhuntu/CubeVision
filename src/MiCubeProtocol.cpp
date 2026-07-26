@@ -214,7 +214,7 @@ std::optional<MiCubeState> decodeMiCubePacket(const QByteArray &packet){
     // Convert the Mi Smart Magic Cube's facelet order to CubeVision's UDLRFB
     // face order. The Mi cube reports faces with U/D, R/F and L/B swapped
     // relative to the Giiker-style URFDLB order assumed by the decoder tables.
-    static constexpr std::array<int,6> standardToCubeVision={{1,0,5,4,3,2}};
+    static constexpr std::array<int,6> standardToCubeVision={{0,3,4,1,2,5}};
     CubeFaces colors;
     for(int standardFace=0;standardFace<6;++standardFace){
         const int cubeVisionFace=standardToCubeVision[standardFace];
