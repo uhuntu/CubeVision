@@ -2,7 +2,7 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Build CubeVision",
+      "label": "Build CubeVision (MinGW)",
       "type": "shell",
       "command": "cmake --build build --target CubeVision --parallel 4",
       "options": {
@@ -13,12 +13,12 @@
       },
       "group": {
         "kind": "build",
-        "isDefault": true
+        "isDefault": false
       },
       "problemMatcher": ["$gcc"]
     },
     {
-      "label": "Deploy CubeVision",
+      "label": "Deploy CubeVision (MinGW)",
       "type": "shell",
       "command": "cmake --build build --target deploy --parallel 4",
       "options": {
@@ -26,6 +26,29 @@
         "env": {
           "PATH": "C:\\Users\\huntl\\msys64\\ucrt64\\bin;C:\\Qt\\Tools\\CMake_64\\bin;C:\\Qt\\Tools\\Ninja;${env:PATH}"
         }
+      },
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Build CubeVision (MSVC)",
+      "type": "shell",
+      "command": "cmd /c build_msvc.bat",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": ["$msCompile"]
+    },
+    {
+      "label": "Deploy CubeVision (MSVC)",
+      "type": "shell",
+      "command": "cmd /c deploy_msvc.bat",
+      "options": {
+        "cwd": "${workspaceFolder}"
       },
       "group": "build",
       "problemMatcher": []

@@ -2,7 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug CubeVision",
+      "name": "Debug CubeVision (MinGW)",
       "type": "cppdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build/CubeVision.exe",
@@ -25,10 +25,10 @@
           "ignoreFailures": true
         }
       ],
-      "preLaunchTask": "Build CubeVision"
+      "preLaunchTask": "Build CubeVision (MinGW)"
     },
     {
-      "name": "Run Deployed CubeVision",
+      "name": "Run Deployed CubeVision (MinGW)",
       "type": "cppdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build/deploy/CubeVision.exe",
@@ -39,6 +39,32 @@
       "externalConsole": false,
       "MIMode": "gdb",
       "miDebuggerPath": "C:/Users/huntl/msys64/ucrt64/bin/gdb.exe"
+    },
+    {
+      "name": "Debug CubeVision (MSVC)",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build-msvc/Release/CubeVision.exe",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [
+        {
+          "name": "PATH",
+          "value": "C:\\Qt\\6.5.3\\msvc2019_64\\bin;C:\\Users\\huntl\\opencv_build\\install\\x64\\vc16\\bin;${env:PATH}"
+        }
+      ],
+      "preLaunchTask": "Build CubeVision (MSVC)"
+    },
+    {
+      "name": "Run Deployed CubeVision (MSVC)",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build-msvc/deploy/CubeVision.exe",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}/build-msvc/deploy",
+      "environment": []
     }
   ]
 }
