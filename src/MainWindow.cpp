@@ -9,6 +9,7 @@
 #include <QHash>
 #include <QHBoxLayout>
 #include <QImage>
+#include <QInputDialog>
 #include <QPixmap>
 #include <QRegularExpression>
 #include <QStandardPaths>
@@ -666,6 +667,8 @@ MainWindow::MainWindow(){
 
     connectBluetoothButton=new QPushButton("Connect Mi Cube",toolbar);
     toolbar->addWidget(connectBluetoothButton);
+    connectBluetoothByMacButton=new QPushButton("Connect by MAC",toolbar);
+    toolbar->addWidget(connectBluetoothByMacButton);
     bluetoothStatus=new QLabel(" Bluetooth: disconnected",toolbar);
     toolbar->addWidget(bluetoothStatus);
 
@@ -755,7 +758,15 @@ MainWindow::MainWindow(){
 
     bluetoothCube=new BluetoothCube(this);
     connect(connectBluetoothButton,&QPushButton::clicked,
-            bluetoothCube,&BluetoothCube::connectToCube);
+            bluetoothCube,qOverload<>(&BluetoothCube::connectToCube));
+    connect(connectBluetoothByMacButton,&QPushButton::clicked,this,[this]{
+        bool ok=false;
+        const QString mac=QInputDialog::getText(
+            this,"Connect by MAC","Enter Mi cube MAC address (e.g. DC:AA:18:33:4C:B0):",
+            QLineEdit::Normal,QString(),&ok);
+        if(ok && !mac.trimmed().isEmpty())
+            bluetoothCube->connectToCube(mac.trimmed());
+    });
     connect(bluetoothCube,&BluetoothCube::statusChanged,this,[this](const QString &status){
         bluetoothStatus->setText(" "+status);
     });

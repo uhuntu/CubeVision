@@ -52,6 +52,7 @@ private:
     QPushButton *captureCubeFaceButton;
     QPushButton *resetCubeScanButton;
     QPushButton *connectBluetoothButton;
+    QPushButton *connectBluetoothByMacButton;
     QComboBox *solveMethodSelector;
     QPushButton *solveCubeButton;
     QPushButton *previousMoveButton;

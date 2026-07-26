@@ -17,6 +17,7 @@ public:
     bool isConnected() const;
 public slots:
     void connectToCube();
+    void connectToCube(const QString &macAddress);
     void disconnectFromCube();
 signals:
     void statusChanged(const QString &status);

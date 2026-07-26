@@ -2,7 +2,9 @@
 #include "MiCubeProtocol.h"
 
 #ifdef CUBEVISION_HAS_BLUETOOTH
+#include <QBluetoothAddress>
 #include <QBluetoothDeviceDiscoveryAgent>
+#include <QBluetoothLocalDevice>
 #include <QBluetoothUuid>
 #include <QDebug>
 #include <QLowEnergyCharacteristic>
@@ -56,9 +58,42 @@ void BluetoothCube::connectToCube(){
         disconnectFromCube();
         return;
     }
+    QBluetoothLocalDevice localDevice;
+    qDebug()<<"[BluetoothCube] localDevice valid="<<localDevice.isValid()
+            <<"hostMode="<<localDevice.hostMode();
+    if(!localDevice.isValid()){
+        emit statusChanged("Bluetooth adapter not detected; enable Bluetooth or use Connect by MAC");
+        return;
+    }
+    if(localDevice.hostMode()==QBluetoothLocalDevice::HostPoweredOff){
+        emit statusChanged("Bluetooth is off; turn it on and retry");
+        return;
+    }
     matchingDeviceFound=false;
     emit statusChanged("Scanning for Mi Smart Magic Cube...");
     discoveryAgent->start();
+#else
+    emit statusChanged(
+        "Bluetooth support is unavailable in this build (install Qt 6 Connectivity and rebuild)");
+#endif
+}
+
+void BluetoothCube::connectToCube(const QString &macAddress){
+#ifdef CUBEVISION_HAS_BLUETOOTH
+    if(isConnected()){
+        disconnectFromCube();
+        return;
+    }
+    QBluetoothAddress address(macAddress.trimmed());
+    if(address.isNull()){
+        emit statusChanged("Invalid MAC address: "+macAddress);
+        return;
+    }
+    QBluetoothDeviceInfo info(address,"Mi Smart Magic Cube",0);
+    info.setServiceUuids({XiaomiServiceUuid});
+    qDebug()<<"[BluetoothCube] direct connect to"<<address.toString();
+    matchingDeviceFound=true;
+    beginConnection(info);
 #else
     emit statusChanged(
         "Bluetooth support is unavailable in this build (install Qt 6 Connectivity and rebuild)");
