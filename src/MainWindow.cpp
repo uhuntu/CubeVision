@@ -1146,7 +1146,7 @@ void MainWindow::processAutomaticMoveVerification(const std::vector<int> &ids){
         return;
     }
 
-    auto missObservation=[this]{
+    auto missObservation=[this,AllowedMissedFrames]{
         if(++missedVerificationFrames<=AllowedMissedFrames)
             return;
         stableVerificationFrames=0;
@@ -1443,7 +1443,7 @@ void MainWindow::processAutomaticCubeScan(
         [](const int id){ return id>=0; }));
     const int confirmed=static_cast<int>(std::count_if(
         pendingCubeScanCounts.begin(),pendingCubeScanCounts.end(),
-        [](const int count){ return count>=RequiredObservationsPerMarker; }));
+        [RequiredObservationsPerMarker](const int count){ return count>=RequiredObservationsPerMarker; }));
     if(confirmed<9){
         updateCubeScanStatus(
             QString("Collecting %1 face: %2/9 found, %3/9 confirmed")
