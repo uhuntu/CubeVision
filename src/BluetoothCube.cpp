@@ -243,6 +243,16 @@ static QString deriveMoveFromStateChange(const CubeFaces &previous,const CubeFac
     return QString();
 }
 
+static QString changedFaceIndices(const CubeFaces &previous,const CubeFaces &current){
+    QStringList changed;
+    static constexpr std::array<char,6> faceChars={{'U','D','L','R','F','B'}};
+    for(int face=0;face<6;++face){
+        if(previous[face]!=current[face])
+            changed.append(QChar(faceChars[face]));
+    }
+    return changed.join(',');
+}
+
 void BluetoothCube::acceptPacket(const QByteArray &packet){
     qDebug()<<"[BluetoothCube] packet received, len="<<packet.size()
             <<"hex="<<packet.toHex();
@@ -253,15 +263,20 @@ void BluetoothCube::acceptPacket(const QByteArray &packet){
         return;
     }
     QString move=state->lastMove;
+    QString changedFaces;
     if(previousFaces){
+        changedFaces=changedFaceIndices(*previousFaces,state->faces);
         const QString derived=deriveMoveFromStateChange(*previousFaces,state->faces);
-        if(!derived.isEmpty()){
-            qDebug()<<"[BluetoothCube] packet move="<<move<<"derived="<<derived;
+        qDebug()<<"[BluetoothCube] changed faces:"<<changedFaces
+                <<"packet move="<<move
+                <<"derived move="<<(derived.isEmpty()?"<none>":derived);
+        if(!derived.isEmpty())
             move=derived;
-        }
+    }else{
+        qDebug()<<"[BluetoothCube] first packet, packet move="<<move;
     }
     previousFaces=state->faces;
-    qDebug()<<"[BluetoothCube] packet decoded, lastMove="<<move;
+    qDebug()<<"[BluetoothCube] final lastMove="<<move;
     emit cubeStateChanged(state->faces,move);
 }
 #endif
