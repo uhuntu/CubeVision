@@ -1,4 +1,5 @@
 #include "BluetoothCube.h"
+#include "CubeState.h"
 #include "MiCubeProtocol.h"
 
 #ifdef CUBEVISION_HAS_BLUETOOTH
@@ -112,6 +113,7 @@ void BluetoothCube::disconnectFromCube(){
         dataService->deleteLater();
         dataService=nullptr;
     }
+    previousFaces.reset();
     emit connectedChanged(false);
     emit statusChanged("Bluetooth cube disconnected");
 #endif
@@ -224,6 +226,23 @@ void BluetoothCube::serviceStateChanged(const int state){
     emit statusChanged("Mi Bluetooth cube connected; twist any face to sync");
 }
 
+static QString deriveMoveFromStateChange(const CubeFaces &previous,const CubeFaces &current){
+    static constexpr std::array<char,6> faceChars={{'U','D','L','R','F','B'}};
+    for(char faceChar:faceChars){
+        for(int turns=1;turns<=3;++turns){
+            if(applyCubeMove(previous,faceChar,turns)==current){
+                QString move=QChar(faceChar);
+                if(turns==2)
+                    move+='2';
+                else if(turns==3)
+                    move+='\'';
+                return move;
+            }
+        }
+    }
+    return QString();
+}
+
 void BluetoothCube::acceptPacket(const QByteArray &packet){
     qDebug()<<"[BluetoothCube] packet received, len="<<packet.size()
             <<"hex="<<packet.toHex();
@@ -233,7 +252,16 @@ void BluetoothCube::acceptPacket(const QByteArray &packet){
         emit statusChanged("Received an invalid Mi cube state packet");
         return;
     }
-    qDebug()<<"[BluetoothCube] packet decoded, lastMove="<<state->lastMove;
-    emit cubeStateChanged(state->faces,state->lastMove);
+    QString move=state->lastMove;
+    if(previousFaces){
+        const QString derived=deriveMoveFromStateChange(*previousFaces,state->faces);
+        if(!derived.isEmpty()){
+            qDebug()<<"[BluetoothCube] packet move="<<move<<"derived="<<derived;
+            move=derived;
+        }
+    }
+    previousFaces=state->faces;
+    qDebug()<<"[BluetoothCube] packet decoded, lastMove="<<move;
+    emit cubeStateChanged(state->faces,move);
 }
 #endif

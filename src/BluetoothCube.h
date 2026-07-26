@@ -35,6 +35,7 @@ private:
     QLowEnergyController *controller=nullptr;
     QLowEnergyService *dataService=nullptr;
     bool matchingDeviceFound=false;
+    std::optional<CubeFaces> previousFaces;
 #endif
 };
 
