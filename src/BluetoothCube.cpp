@@ -14,6 +14,9 @@ const QBluetoothUuid DataServiceUuid(
     QStringLiteral("0000aadb-0000-1000-8000-00805f9b34fb"));
 const QBluetoothUuid DataCharacteristicUuid(
     QStringLiteral("0000aadc-0000-1000-8000-00805f9b34fb"));
+const quint16 XiaomiManufacturerId=0x038f;
+const QBluetoothUuid XiaomiServiceUuid(
+    QStringLiteral("0000fe95-0000-1000-8000-00805f9b34fb"));
 }
 #endif
 
@@ -77,8 +80,11 @@ void BluetoothCube::disconnectFromCube(){
 #ifdef CUBEVISION_HAS_BLUETOOTH
 void BluetoothCube::deviceDiscovered(const QBluetoothDeviceInfo &info){
     const QString name=info.name();
-    if(!name.startsWith("Mi Smart Magic Cube",Qt::CaseInsensitive)
-        &&!name.startsWith("Gi",Qt::CaseInsensitive))
+    const bool matchesName=name.startsWith("Mi Smart Magic Cube",Qt::CaseInsensitive)
+        ||name.startsWith("Gi",Qt::CaseInsensitive);
+    const bool matchesXiaomi=!info.manufacturerData(XiaomiManufacturerId).isEmpty();
+    const bool matchesService=info.serviceUuids().contains(XiaomiServiceUuid);
+    if(!matchesName&&!matchesXiaomi&&!matchesService)
         return;
     matchingDeviceFound=true;
     discoveryAgent->stop();
@@ -90,7 +96,8 @@ void BluetoothCube::beginConnection(const QBluetoothDeviceInfo &info){
         controller->deleteLater();
         controller=nullptr;
     }
-    emit statusChanged("Connecting to "+info.name()+"...");
+    const QString displayName=info.name().isEmpty()?QStringLiteral("Mi Smart Magic Cube"):info.name();
+    emit statusChanged("Connecting to "+displayName+"...");
     controller=QLowEnergyController::createCentral(info,this);
     connect(controller,&QLowEnergyController::connected,this,[this]{
         emit statusChanged("Discovering Bluetooth cube service...");
