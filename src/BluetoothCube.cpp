@@ -4,6 +4,7 @@
 #ifdef CUBEVISION_HAS_BLUETOOTH
 #include <QBluetoothDeviceDiscoveryAgent>
 #include <QBluetoothUuid>
+#include <QDebug>
 #include <QLowEnergyCharacteristic>
 #include <QLowEnergyController>
 #include <QLowEnergyDescriptor>
@@ -27,11 +28,13 @@ BluetoothCube::BluetoothCube(QObject *parent):QObject(parent){
     connect(discoveryAgent,&QBluetoothDeviceDiscoveryAgent::deviceDiscovered,
             this,&BluetoothCube::deviceDiscovered);
     connect(discoveryAgent,&QBluetoothDeviceDiscoveryAgent::finished,this,[this]{
+        qDebug()<<"[BluetoothCube] scan finished; matchingDeviceFound="<<matchingDeviceFound;
         if(!matchingDeviceFound)
             emit statusChanged("Bluetooth cube not found; twist a face to wake it and retry");
     });
     connect(discoveryAgent,&QBluetoothDeviceDiscoveryAgent::errorOccurred,
-            this,[this](QBluetoothDeviceDiscoveryAgent::Error){
+            this,[this](QBluetoothDeviceDiscoveryAgent::Error error){
+        qDebug()<<"[BluetoothCube] scan error:"<<error<<discoveryAgent->errorString();
         emit statusChanged("Bluetooth scan failed: "+discoveryAgent->errorString());
     });
 #endif
@@ -55,7 +58,7 @@ void BluetoothCube::connectToCube(){
     }
     matchingDeviceFound=false;
     emit statusChanged("Scanning for Mi Smart Magic Cube...");
-    discoveryAgent->start(QBluetoothDeviceDiscoveryAgent::LowEnergyMethod);
+    discoveryAgent->start();
 #else
     emit statusChanged(
         "Bluetooth support is unavailable in this build (install Qt 6 Connectivity and rebuild)");
@@ -80,10 +83,15 @@ void BluetoothCube::disconnectFromCube(){
 #ifdef CUBEVISION_HAS_BLUETOOTH
 void BluetoothCube::deviceDiscovered(const QBluetoothDeviceInfo &info){
     const QString name=info.name();
+    const auto manufacturerData=info.manufacturerData(XiaomiManufacturerId);
+    const auto serviceUuids=info.serviceUuids();
     const bool matchesName=name.startsWith("Mi Smart Magic Cube",Qt::CaseInsensitive)
         ||name.startsWith("Gi",Qt::CaseInsensitive);
-    const bool matchesXiaomi=!info.manufacturerData(XiaomiManufacturerId).isEmpty();
-    const bool matchesService=info.serviceUuids().contains(XiaomiServiceUuid);
+    const bool matchesXiaomi=!manufacturerData.isEmpty();
+    const bool matchesService=serviceUuids.contains(XiaomiServiceUuid);
+    qDebug()<<"[BluetoothCube] discovered"<<info.address().toString()<<"name="<<name
+            <<"manufacturer[Xiaomi]="<<manufacturerData.toHex()
+            <<"services="<<serviceUuids<<"matches="<<(matchesName||matchesXiaomi||matchesService);
     if(!matchesName&&!matchesXiaomi&&!matchesService)
         return;
     matchingDeviceFound=true;
