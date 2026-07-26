@@ -3,8 +3,6 @@
 #include <QFile>
 #include <QDateTime>
 #include <QDebug>
-#include <QStandardPaths>
-#include <QDir>
 
 static QFile *g_logFile=nullptr;
 
@@ -30,12 +28,11 @@ static void logMessageHandler(QtMsgType type,const QMessageLogContext &context,c
 }
 
 int main(int argc,char *argv[]){
-    const QString logDir=QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-    QDir().mkpath(logDir);
-    g_logFile=new QFile(logDir+"/CubeVision.log");
+    QApplication app(argc,argv);
+    const QString logPath=QCoreApplication::applicationDirPath()+"/CubeVision.log";
+    g_logFile=new QFile(logPath);
     if(g_logFile->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
         qInstallMessageHandler(logMessageHandler);
-    QApplication app(argc,argv);
     MainWindow w;
     w.show();
     const int ret=app.exec();
