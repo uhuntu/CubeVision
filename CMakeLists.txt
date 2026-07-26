@@ -9,6 +9,7 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
+find_package(Qt6 QUIET COMPONENTS Bluetooth)
 find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs videoio aruco calib3d)
 
 add_executable(CubeVision
@@ -21,9 +22,19 @@ add_executable(CubeVision
     src/CubeState.h
     src/CrossSolver.cpp
     src/CrossSolver.h
+    src/MiCubeProtocol.cpp
+    src/MiCubeProtocol.h
+    src/BluetoothCube.cpp
+    src/BluetoothCube.h
 )
 
 target_link_libraries(CubeVision PRIVATE Qt6::Widgets ${OpenCV_LIBS})
+if(TARGET Qt6::Bluetooth)
+    target_link_libraries(CubeVision PRIVATE Qt6::Bluetooth)
+    target_compile_definitions(CubeVision PRIVATE CUBEVISION_HAS_BLUETOOTH)
+else()
+    message(WARNING "Qt6 Bluetooth was not found; building without live Bluetooth support")
+endif()
 
 if(BUILD_TESTING)
     add_executable(CubeStateTest
@@ -42,6 +53,15 @@ if(BUILD_TESTING)
     target_include_directories(CrossSolverTest PRIVATE src)
     target_link_libraries(CrossSolverTest PRIVATE Qt6::Core)
     add_test(NAME CrossSolverTest COMMAND CrossSolverTest)
+
+    add_executable(MiCubeProtocolTest
+        tests/MiCubeProtocolTest.cpp
+        src/MiCubeProtocol.cpp
+        src/CubeState.cpp
+    )
+    target_include_directories(MiCubeProtocolTest PRIVATE src)
+    target_link_libraries(MiCubeProtocolTest PRIVATE Qt6::Core)
+    add_test(NAME MiCubeProtocolTest COMMAND MiCubeProtocolTest)
 endif()
 
 add_executable(CubeSolver

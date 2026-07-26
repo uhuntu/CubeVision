@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "BluetoothCube.h"
 #include "CrossSolver.h"
 #include "CubeState.h"
 #include "CubeWidget.h"
@@ -661,6 +662,12 @@ MainWindow::MainWindow(){
 
     resetCubeScanButton=new QPushButton("Reset scan",toolbar);
     toolbar->addWidget(resetCubeScanButton);
+    toolbar->addSeparator();
+
+    connectBluetoothButton=new QPushButton("Connect Mi Cube",toolbar);
+    toolbar->addWidget(connectBluetoothButton);
+    bluetoothStatus=new QLabel(" Bluetooth: disconnected",toolbar);
+    toolbar->addWidget(bluetoothStatus);
 
     addToolBarBreak();
     auto *coachToolbar=addToolBar("Solve Coach");
@@ -745,6 +752,20 @@ MainWindow::MainWindow(){
     });
     connect(solveCubeButton,&QPushButton::clicked,this,&MainWindow::startCubeSolver);
     connect(nextMoveButton,&QPushButton::clicked,this,&MainWindow::verifySolutionMove);
+
+    bluetoothCube=new BluetoothCube(this);
+    connect(connectBluetoothButton,&QPushButton::clicked,
+            bluetoothCube,&BluetoothCube::connectToCube);
+    connect(bluetoothCube,&BluetoothCube::statusChanged,this,[this](const QString &status){
+        bluetoothStatus->setText(" "+status);
+    });
+    connect(bluetoothCube,&BluetoothCube::connectedChanged,this,[this](const bool connected){
+        connectBluetoothButton->setText(connected ? "Disconnect Mi Cube" : "Connect Mi Cube");
+        if(connected && captureCubeFaceButton->isChecked())
+            captureCubeFaceButton->setChecked(false);
+    });
+    connect(bluetoothCube,&BluetoothCube::cubeStateChanged,
+            this,&MainWindow::acceptBluetoothCubeState);
 
     auto *central=new QWidget(this);
     auto *layout=new QVBoxLayout(central);
@@ -1246,6 +1267,55 @@ void MainWindow::verifySolutionMove(){
         return;
     }
     solutionStatus->setText("Face does not match the expected state; undo the last action and retry");
+}
+
+void MainWindow::acceptBluetoothCubeState(
+    const CubeFaces &faces,
+    const QString &lastMove){
+    if(!cubeScanIsValid()){
+        scannedCubeFaces=faces;
+        cubeWidget->setCubeState(scannedCubeFaces);
+        updateCubeScanStatus("Cube state synced from Mi Bluetooth cube");
+        bluetoothStatus->setText(
+            lastMove.isEmpty() ? " Mi cube synced" : " Mi cube synced: "+lastMove);
+        return;
+    }
+
+    if(solutionMoveIndex>=0 && solutionMoveIndex<solutionMoves.size()){
+        const QString expectedMove=solutionMoves[solutionMoveIndex];
+        int turns=1;
+        if(expectedMove.endsWith('2'))
+            turns=2;
+        else if(expectedMove.endsWith('\''))
+            turns=3;
+        const CubeFaces expected=
+            applyCubeMove(scannedCubeFaces,expectedMove.front(),turns);
+        if(faces==expected){
+            scannedCubeFaces=faces;
+            cubeWidget->setCubeState(scannedCubeFaces);
+            ++solutionMoveIndex;
+            updateSolutionStep();
+            bluetoothStatus->setText(" Mi cube move verified: "+expectedMove);
+            return;
+        }
+        if(faces!=scannedCubeFaces){
+            bluetoothStatus->setText(
+                lastMove.isEmpty()
+                    ? " Mi cube changed unexpectedly; undo the move"
+                    : QString(" Wrong Mi cube move: %1; expected %2")
+                          .arg(lastMove,expectedMove));
+            return;
+        }
+    }
+
+    scannedCubeFaces=faces;
+    cubeWidget->setCubeState(scannedCubeFaces);
+    updateCubeScanStatus(
+        lastMove.isEmpty()
+            ? "Cube state synced from Mi Bluetooth cube"
+            : "Mi Bluetooth cube move: "+lastMove);
+    bluetoothStatus->setText(
+        lastMove.isEmpty() ? " Mi cube synced" : " Mi cube move: "+lastMove);
 }
 
 void MainWindow::resetPendingCubeScan(){

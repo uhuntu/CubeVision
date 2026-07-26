@@ -5,7 +5,7 @@ Requirements:
 - Linux or Windows
 - C++17 compiler
 - CMake 3.21+
-- Qt 6
+- Qt 6 (Widgets and Bluetooth/Connectivity modules)
 - OpenCV 4.x
 
 Build:
@@ -43,6 +43,7 @@ Current features:
 - Six-face cube-state scanning with marker ID validation
 - Offline two-phase solving with step-by-step move guidance
 - Live 3D cube-state visualization with active-move highlighting
+- Mi Smart Magic Cube / Giiker-compatible Bluetooth LE state and move input
 
 Camera calibration:
 
@@ -54,8 +55,17 @@ Camera calibration:
 4. Select **Calibrate**. The parameters are saved in the user's application
    configuration directory and loaded on future runs.
 
-Roadmap:
+Bluetooth cube:
 
-v0.2 Face labels
-v0.3 Pose
-v0.4 BT cube
+1. Wake the cube by twisting a face.
+2. Select **Connect Mi Cube**.
+3. Keep the cube close while CubeVision discovers and connects to it.
+4. The current state is imported automatically. During solve coaching, each
+   correct physical turn advances to the next instruction without camera
+   verification.
+
+The supported device advertises as `Mi Smart Magic Cube` (compatible Giiker
+`Gi...` names are also accepted) and exposes the `aadb/aadc` BLE state service.
+On Linux, install the Qt Connectivity package and ensure BlueZ is running. If
+Qt Bluetooth is absent, CubeVision still builds with camera-only functionality
+and reports that Bluetooth is unavailable.

@@ -11,6 +11,7 @@
 #include <vector>
 
 class CubeWidget;
+class BluetoothCube;
 
 class MainWindow: public QMainWindow{
     Q_OBJECT
@@ -39,6 +40,9 @@ private:
     void updateSolutionStep();
     void verifySolutionMove();
     void processAutomaticMoveVerification(const std::vector<int> &ids);
+    void acceptBluetoothCubeState(
+        const std::array<std::array<int,9>,6> &faces,
+        const QString &lastMove);
 
     QComboBox *dictionarySelector;
     QPushButton *calibrationModeButton;
@@ -47,6 +51,7 @@ private:
     QPushButton *toggleCalibrationButton;
     QPushButton *captureCubeFaceButton;
     QPushButton *resetCubeScanButton;
+    QPushButton *connectBluetoothButton;
     QComboBox *solveMethodSelector;
     QPushButton *solveCubeButton;
     QPushButton *previousMoveButton;
@@ -54,8 +59,10 @@ private:
     QLabel *calibrationStatus;
     QLabel *cubeScanStatus;
     QLabel *solutionStatus;
+    QLabel *bluetoothStatus;
     QLabel *view;
     CubeWidget *cubeWidget;
+    BluetoothCube *bluetoothCube;
     QTimer *timer;
     cv::VideoCapture cap;
     bool captureCalibrationFrame=false;
