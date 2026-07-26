@@ -1,5 +1,7 @@
 /build/
 /build-debug/
+/build-msvc/
 /.vscode/*
 !/.vscode/launch.json
 !/.vscode/tasks.json
+__pycache__/
