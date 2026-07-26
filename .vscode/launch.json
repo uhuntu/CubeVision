@@ -2,46 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug CubeVision (MinGW)",
-      "type": "cppdbg",
-      "request": "launch",
-      "program": "${workspaceFolder}/build/CubeVision.exe",
-      "args": [],
-      "stopAtEntry": false,
-      "cwd": "${workspaceFolder}",
-      "environment": [
-        {
-          "name": "PATH",
-          "value": "C:\\Users\\huntl\\msys64\\ucrt64\\bin;${env:PATH}"
-        }
-      ],
-      "externalConsole": false,
-      "MIMode": "gdb",
-      "miDebuggerPath": "C:/Users/huntl/msys64/ucrt64/bin/gdb.exe",
-      "setupCommands": [
-        {
-          "description": "Enable pretty-printing for gdb",
-          "text": "-enable-pretty-printing",
-          "ignoreFailures": true
-        }
-      ],
-      "preLaunchTask": "Build CubeVision (MinGW)"
-    },
-    {
-      "name": "Run Deployed CubeVision (MinGW)",
-      "type": "cppdbg",
-      "request": "launch",
-      "program": "${workspaceFolder}/build/deploy/CubeVision.exe",
-      "args": [],
-      "stopAtEntry": false,
-      "cwd": "${workspaceFolder}/build/deploy",
-      "environment": [],
-      "externalConsole": false,
-      "MIMode": "gdb",
-      "miDebuggerPath": "C:/Users/huntl/msys64/ucrt64/bin/gdb.exe"
-    },
-    {
-      "name": "Debug CubeVision (MSVC)",
+      "name": "Debug CubeVision (MSVC, use this for Mi cube)",
       "type": "cppvsdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build-msvc/Release/CubeVision.exe",
@@ -57,7 +18,7 @@
       "preLaunchTask": "Build CubeVision (MSVC)"
     },
     {
-      "name": "Run Deployed CubeVision (MSVC)",
+      "name": "Run Deployed CubeVision (MSVC, use this for Mi cube)",
       "type": "cppvsdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build-msvc/deploy/CubeVision.exe",
