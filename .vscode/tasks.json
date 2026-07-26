@@ -2,35 +2,33 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Configure CubeVision (Debug)",
-      "type": "process",
-      "command": "cmake",
-      "args": [
-        "-S",
-        "${workspaceFolder}",
-        "-B",
-        "${workspaceFolder}/build-debug",
-        "-G",
-        "Ninja",
-        "-DCMAKE_BUILD_TYPE=Debug"
-      ],
-      "problemMatcher": []
-    },
-    {
-      "label": "Build CubeVision (Debug)",
-      "type": "process",
-      "command": "cmake",
-      "args": [
-        "--build",
-        "${workspaceFolder}/build-debug",
-        "--parallel"
-      ],
-      "dependsOn": "Configure CubeVision (Debug)",
-      "problemMatcher": "$gcc",
+      "label": "Build CubeVision",
+      "type": "shell",
+      "command": "cmake --build build --target CubeVision --parallel 4",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PATH": "C:\\Users\\huntl\\msys64\\ucrt64\\bin;C:\\Qt\\Tools\\CMake_64\\bin;C:\\Qt\\Tools\\Ninja;${env:PATH}"
+        }
+      },
       "group": {
         "kind": "build",
         "isDefault": true
-      }
+      },
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "Deploy CubeVision",
+      "type": "shell",
+      "command": "cmake --build build --target deploy --parallel 4",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PATH": "C:\\Users\\huntl\\msys64\\ucrt64\\bin;C:\\Qt\\Tools\\CMake_64\\bin;C:\\Qt\\Tools\\Ninja;${env:PATH}"
+        }
+      },
+      "group": "build",
+      "problemMatcher": []
     }
   ]
 }
