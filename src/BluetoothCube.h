@@ -5,6 +5,7 @@
 
 #ifdef CUBEVISION_HAS_BLUETOOTH
 #include <QBluetoothDeviceInfo>
+#include <QElapsedTimer>
 class QBluetoothDeviceDiscoveryAgent;
 class QLowEnergyController;
 class QLowEnergyService;
@@ -35,8 +36,9 @@ private:
     QLowEnergyController *controller=nullptr;
     QLowEnergyService *dataService=nullptr;
     bool matchingDeviceFound=false;
+    QString requestedMacAddress;
+    QElapsedTimer initialSyncTimer;
     std::optional<CubeFaces> previousFaces;
     std::optional<CubeFaces> physicalFaces;
 #endif
 };
-

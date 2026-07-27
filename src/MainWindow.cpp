@@ -35,6 +35,7 @@ constexpr float Marker4x4SizeMeters=0.010F;
 constexpr int CaptureWidth=1920;
 constexpr int CaptureHeight=1080;
 constexpr int CaptureFramesPerSecond=30;
+const QString DefaultMiCubeMac=QStringLiteral("DC:AA:18:33:4C:B0");
 
 struct FaceMarkerSelection{
     std::size_t centerIndex=0;
@@ -757,13 +758,14 @@ MainWindow::MainWindow(){
     connect(nextMoveButton,&QPushButton::clicked,this,&MainWindow::verifySolutionMove);
 
     bluetoothCube=new BluetoothCube(this);
-    connect(connectBluetoothButton,&QPushButton::clicked,
-            bluetoothCube,qOverload<>(&BluetoothCube::connectToCube));
+    connect(connectBluetoothButton,&QPushButton::clicked,this,[this]{
+        bluetoothCube->connectToCube(DefaultMiCubeMac);
+    });
     connect(connectBluetoothByMacButton,&QPushButton::clicked,this,[this]{
         bool ok=false;
         const QString mac=QInputDialog::getText(
             this,"Connect by MAC","Enter Mi cube MAC address (e.g. DC:AA:18:33:4C:B0):",
-            QLineEdit::Normal,QString(),&ok);
+            QLineEdit::Normal,DefaultMiCubeMac,&ok);
         if(ok && !mac.trimmed().isEmpty())
             bluetoothCube->connectToCube(mac.trimmed());
     });

@@ -21,6 +21,7 @@ const QBluetoothUuid DataCharacteristicUuid(
 const quint16 XiaomiManufacturerId=0x038f;
 const QBluetoothUuid XiaomiServiceUuid(
     QStringLiteral("0000fe95-0000-1000-8000-00805f9b34fb"));
+constexpr qint64 InitialSyncWindowMilliseconds=750;
 }
 #endif
 
@@ -32,8 +33,14 @@ BluetoothCube::BluetoothCube(QObject *parent):QObject(parent){
             this,&BluetoothCube::deviceDiscovered);
     connect(discoveryAgent,&QBluetoothDeviceDiscoveryAgent::finished,this,[this]{
         qDebug()<<"[BluetoothCube] scan finished; matchingDeviceFound="<<matchingDeviceFound;
-        if(!matchingDeviceFound)
-            emit statusChanged("Bluetooth cube not found; twist a face to wake it and retry");
+        if(!matchingDeviceFound){
+            const QString target=requestedMacAddress;
+            requestedMacAddress.clear();
+            emit statusChanged(target.isEmpty()
+                ? "Bluetooth cube not found; twist a face to wake it and retry"
+                : "Bluetooth cube "+target+
+                      " not found; twist a face to wake it and retry");
+        }
     });
     connect(discoveryAgent,&QBluetoothDeviceDiscoveryAgent::errorOccurred,
             this,[this](QBluetoothDeviceDiscoveryAgent::Error error){
@@ -71,6 +78,7 @@ void BluetoothCube::connectToCube(){
         return;
     }
     matchingDeviceFound=false;
+    requestedMacAddress.clear();
     emit statusChanged("Scanning for Mi Smart Magic Cube...");
     discoveryAgent->start();
 #else
@@ -90,13 +98,20 @@ void BluetoothCube::connectToCube(const QString &macAddress){
         emit statusChanged("Invalid MAC address: "+macAddress);
         return;
     }
-    QBluetoothDeviceInfo info(address,"Mi Smart Magic Cube",0);
-    info.setServiceUuids({XiaomiServiceUuid});
-    info.setCoreConfigurations(QBluetoothDeviceInfo::LowEnergyCoreConfiguration);
-    qDebug()<<"[BluetoothCube] direct connect to"<<address.toString()
-            <<"coreConfigs="<<info.coreConfigurations();
-    matchingDeviceFound=true;
-    beginConnection(info);
+    QBluetoothLocalDevice localDevice;
+    if(!localDevice.isValid()){
+        emit statusChanged("Bluetooth adapter not detected");
+        return;
+    }
+    if(localDevice.hostMode()==QBluetoothLocalDevice::HostPoweredOff){
+        emit statusChanged("Bluetooth is off; turn it on and retry");
+        return;
+    }
+    matchingDeviceFound=false;
+    requestedMacAddress=address.toString();
+    qDebug()<<"[BluetoothCube] scanning for address"<<requestedMacAddress;
+    emit statusChanged("Scanning for Mi cube "+requestedMacAddress+"...");
+    discoveryAgent->start(QBluetoothDeviceDiscoveryAgent::LowEnergyMethod);
 #else
     emit statusChanged(
         "Bluetooth support is unavailable in this build (install Qt 6 Connectivity and rebuild)");
@@ -115,6 +130,8 @@ void BluetoothCube::disconnectFromCube(){
     }
     previousFaces.reset();
     physicalFaces.reset();
+    initialSyncTimer.invalidate();
+    requestedMacAddress.clear();
     emit connectedChanged(false);
     emit statusChanged("Bluetooth cube disconnected");
 #endif
@@ -125,16 +142,23 @@ void BluetoothCube::deviceDiscovered(const QBluetoothDeviceInfo &info){
     const QString name=info.name();
     const auto manufacturerData=info.manufacturerData(XiaomiManufacturerId);
     const auto serviceUuids=info.serviceUuids();
+    const bool matchesRequestedAddress=requestedMacAddress.isEmpty()
+        ||info.address().toString().compare(requestedMacAddress,Qt::CaseInsensitive)==0;
     const bool matchesName=name.startsWith("Mi Smart Magic Cube",Qt::CaseInsensitive)
         ||name.startsWith("Gi",Qt::CaseInsensitive);
     const bool matchesXiaomi=!manufacturerData.isEmpty();
     const bool matchesService=serviceUuids.contains(XiaomiServiceUuid);
     qDebug()<<"[BluetoothCube] discovered"<<info.address().toString()<<"name="<<name
             <<"manufacturer[Xiaomi]="<<manufacturerData.toHex()
-            <<"services="<<serviceUuids<<"matches="<<(matchesName||matchesXiaomi||matchesService);
-    if(!matchesName&&!matchesXiaomi&&!matchesService)
+            <<"services="<<serviceUuids
+            <<"matchesAddress="<<matchesRequestedAddress
+            <<"matchesCube="<<(matchesName||matchesXiaomi||matchesService);
+    if(!matchesRequestedAddress)
+        return;
+    if(requestedMacAddress.isEmpty()&&!matchesName&&!matchesXiaomi&&!matchesService)
         return;
     matchingDeviceFound=true;
+    requestedMacAddress.clear();
     discoveryAgent->stop();
     beginConnection(info);
 }
@@ -305,6 +329,26 @@ void BluetoothCube::acceptPacket(const QByteArray &packet){
         emit statusChanged("Received an invalid Mi cube state packet");
         return;
     }
+    if(!physicalFaces){
+        // Packets already queued by the cube can arrive together when
+        // notifications are enabled. Treat them as one initial snapshot, not
+        // as moves performed after CubeVision connected.
+        previousFaces=state->faces;
+        physicalFaces=solvedCubeFaces();
+        initialSyncTimer.start();
+        qDebug()<<"[BluetoothCube] first synchronization packet";
+        emit cubeStateChanged(*physicalFaces,QString());
+        return;
+    }
+    if(initialSyncTimer.isValid()
+       &&initialSyncTimer.elapsed()<InitialSyncWindowMilliseconds){
+        previousFaces=state->faces;
+        qDebug()<<"[BluetoothCube] absorbing queued synchronization packet at"
+                <<initialSyncTimer.elapsed()<<"ms";
+        emit cubeStateChanged(*physicalFaces,QString());
+        return;
+    }
+
     QString move=state->lastMove;
     QString changedFaces;
     if(previousFaces){
@@ -321,16 +365,7 @@ void BluetoothCube::acceptPacket(const QByteArray &packet){
     previousFaces=state->faces;
     const QString remappedMove=remapMiCubeMove(move);
     qDebug()<<"[BluetoothCube] final lastMove="<<move<<"remapped="<<remappedMove;
-    QString emittedMove=remappedMove;
-    if(!physicalFaces){
-        // The first packet after connect carries the current cube state, but its
-        // lastMove field may be stale (the move before sleep/wake). Start from a
-        // solved physical state and do not apply that first move.
-        physicalFaces=solvedCubeFaces();
-        emittedMove.clear();
-    }else{
-        *physicalFaces=applyMoveString(*physicalFaces,remappedMove);
-    }
-    emit cubeStateChanged(*physicalFaces,emittedMove);
+    *physicalFaces=applyMoveString(*physicalFaces,remappedMove);
+    emit cubeStateChanged(*physicalFaces,remappedMove);
 }
 #endif
