@@ -2,6 +2,39 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "Configure CubeVision (Linux)",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "-S",
+        ".",
+        "-B",
+        "build-linux",
+        "-G",
+        "Ninja",
+        "-DCMAKE_BUILD_TYPE=Debug"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Build CubeVision (Linux)",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "--build",
+        "build-linux",
+        "--parallel"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "dependsOn": "Configure CubeVision (Linux)",
+      "problemMatcher": ["$gcc"]
+    },
+    {
       "label": "Build CubeVision (MSVC)",
       "type": "shell",
       "command": "cmd /c build_msvc.bat",
