@@ -33,6 +33,7 @@ BluetoothCube::BluetoothCube(QObject *parent):QObject(parent){
             this,&BluetoothCube::deviceDiscovered);
     connect(discoveryAgent,&QBluetoothDeviceDiscoveryAgent::finished,this,[this]{
         qDebug()<<"[BluetoothCube] scan finished; matchingDeviceFound="<<matchingDeviceFound;
+        emit connectingChanged(false);
         if(!matchingDeviceFound){
             const QString target=requestedMacAddress;
             requestedMacAddress.clear();
@@ -45,6 +46,7 @@ BluetoothCube::BluetoothCube(QObject *parent):QObject(parent){
     connect(discoveryAgent,&QBluetoothDeviceDiscoveryAgent::errorOccurred,
             this,[this](QBluetoothDeviceDiscoveryAgent::Error error){
         qDebug()<<"[BluetoothCube] scan error:"<<error<<discoveryAgent->errorString();
+        emit connectingChanged(false);
         emit statusChanged("Bluetooth scan failed: "+discoveryAgent->errorString());
     });
 #endif
@@ -79,6 +81,7 @@ void BluetoothCube::connectToCube(){
     }
     matchingDeviceFound=false;
     requestedMacAddress.clear();
+    emit connectingChanged(true);
     emit statusChanged("Scanning for Mi Smart Magic Cube...");
     discoveryAgent->start();
 #else
@@ -110,6 +113,7 @@ void BluetoothCube::connectToCube(const QString &macAddress){
     matchingDeviceFound=false;
     requestedMacAddress=address.toString();
     qDebug()<<"[BluetoothCube] scanning for address"<<requestedMacAddress;
+    emit connectingChanged(true);
     emit statusChanged("Scanning for Mi cube "+requestedMacAddress+"...");
     discoveryAgent->start(QBluetoothDeviceDiscoveryAgent::LowEnergyMethod);
 #else
@@ -132,6 +136,7 @@ void BluetoothCube::disconnectFromCube(){
     physicalFaces.reset();
     initialSyncTimer.invalidate();
     requestedMacAddress.clear();
+    emit connectingChanged(false);
     emit connectedChanged(false);
     emit statusChanged("Bluetooth cube disconnected");
 #endif
@@ -183,11 +188,13 @@ void BluetoothCube::beginConnection(const QBluetoothDeviceInfo &info){
             dataService=nullptr;
         }
         emit connectedChanged(false);
+        emit connectingChanged(false);
         emit statusChanged("Bluetooth cube disconnected");
     });
     connect(controller,&QLowEnergyController::errorOccurred,
             this,[this](QLowEnergyController::Error error){
         qDebug()<<"[BluetoothCube] connection error:"<<error<<controller->errorString();
+        emit connectingChanged(false);
         emit statusChanged("Bluetooth connection failed ["+QString::number(static_cast<int>(error))+
                            "]: "+controller->errorString());
     });
@@ -197,6 +204,7 @@ void BluetoothCube::beginConnection(const QBluetoothDeviceInfo &info){
 void BluetoothCube::serviceScanFinished(){
     dataService=controller->createServiceObject(DataServiceUuid,this);
     if(!dataService){
+        emit connectingChanged(false);
         emit statusChanged("Connected device does not expose the Mi cube service");
         controller->disconnectFromDevice();
         return;
@@ -234,6 +242,7 @@ void BluetoothCube::serviceStateChanged(const int state){
     qDebug()<<"[BluetoothCube] characteristic valid="<<characteristic.isValid()
             <<"props="<<characteristic.properties();
     if(!characteristic.isValid()){
+        emit connectingChanged(false);
         emit statusChanged("Mi cube state characteristic was not found");
         return;
     }
@@ -247,6 +256,7 @@ void BluetoothCube::serviceStateChanged(const int state){
         qDebug()<<"[BluetoothCube] CCCD not valid, trying direct read";
         dataService->readCharacteristic(characteristic);
     }
+    emit connectingChanged(false);
     emit connectedChanged(true);
     emit statusChanged("Mi Bluetooth cube connected; twist any face to sync");
 }

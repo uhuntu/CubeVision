@@ -664,14 +664,17 @@ MainWindow::MainWindow(){
 
     resetCubeScanButton=new QPushButton("Reset scan",toolbar);
     toolbar->addWidget(resetCubeScanButton);
-    toolbar->addSeparator();
 
-    connectBluetoothButton=new QPushButton("Connect Mi Cube",toolbar);
-    toolbar->addWidget(connectBluetoothButton);
-    connectBluetoothByMacButton=new QPushButton("Connect by MAC",toolbar);
-    toolbar->addWidget(connectBluetoothByMacButton);
-    bluetoothStatus=new QLabel(" Bluetooth: disconnected",toolbar);
-    toolbar->addWidget(bluetoothStatus);
+    addToolBarBreak();
+    auto *bluetoothToolbar=addToolBar("Bluetooth");
+    bluetoothToolbar->setMovable(false);
+
+    connectBluetoothButton=new QPushButton("Connect Mi Cube",bluetoothToolbar);
+    bluetoothToolbar->addWidget(connectBluetoothButton);
+    connectBluetoothByMacButton=new QPushButton("Connect by MAC",bluetoothToolbar);
+    bluetoothToolbar->addWidget(connectBluetoothByMacButton);
+    bluetoothStatus=new QLabel(" Bluetooth: disconnected",bluetoothToolbar);
+    bluetoothToolbar->addWidget(bluetoothStatus);
 
     addToolBarBreak();
     auto *coachToolbar=addToolBar("Solve Coach");
@@ -759,7 +762,10 @@ MainWindow::MainWindow(){
 
     bluetoothCube=new BluetoothCube(this);
     connect(connectBluetoothButton,&QPushButton::clicked,this,[this]{
-        bluetoothCube->connectToCube(DefaultMiCubeMac);
+        if(bluetoothCube->isConnected() || bluetoothConnecting)
+            bluetoothCube->disconnectFromCube();
+        else
+            bluetoothCube->connectToCube(DefaultMiCubeMac);
     });
     connect(connectBluetoothByMacButton,&QPushButton::clicked,this,[this]{
         bool ok=false;
@@ -773,12 +779,19 @@ MainWindow::MainWindow(){
         bluetoothStatus->setText(" "+status);
     });
     connect(bluetoothCube,&BluetoothCube::connectedChanged,this,[this](const bool connected){
-        connectBluetoothButton->setText(connected ? "Disconnect Mi Cube" : "Connect Mi Cube");
+        updateBluetoothButtonText();
         if(connected && captureCubeFaceButton->isChecked())
             captureCubeFaceButton->setChecked(false);
     });
+    connect(bluetoothCube,&BluetoothCube::connectingChanged,this,[this](const bool connecting){
+        bluetoothConnecting=connecting;
+        updateBluetoothButtonText();
+    });
     connect(bluetoothCube,&BluetoothCube::cubeStateChanged,
             this,&MainWindow::acceptBluetoothCubeState);
+
+    // Auto-connect to the default Mi Cube on startup.
+    bluetoothCube->connectToCube(DefaultMiCubeMac);
 
     auto *central=new QWidget(this);
     auto *layout=new QVBoxLayout(central);
@@ -1329,6 +1342,13 @@ void MainWindow::acceptBluetoothCubeState(
             : "Mi Bluetooth cube move: "+lastMove);
     bluetoothStatus->setText(
         lastMove.isEmpty() ? " Mi cube synced" : " Mi cube move: "+lastMove);
+}
+
+void MainWindow::updateBluetoothButtonText(){
+    if(bluetoothCube->isConnected() || bluetoothConnecting)
+        connectBluetoothButton->setText("Disconnect Mi Cube");
+    else
+        connectBluetoothButton->setText("Connect Mi Cube");
 }
 
 void MainWindow::resetPendingCubeScan(){

@@ -43,6 +43,7 @@ private:
     void acceptBluetoothCubeState(
         const std::array<std::array<int,9>,6> &faces,
         const QString &lastMove);
+    void updateBluetoothButtonText();
 
     QComboBox *dictionarySelector;
     QPushButton *calibrationModeButton;
@@ -69,6 +70,7 @@ private:
     bool captureCalibrationFrame=false;
     bool cameraCalibrated=false;
     bool calibrationEnabled=false;
+    bool bluetoothConnecting=false;
     cv::Mat cameraMatrix;
     cv::Mat distortionCoefficients;
     cv::Size calibrationImageSize;

@@ -23,6 +23,7 @@ public slots:
 signals:
     void statusChanged(const QString &status);
     void connectedChanged(bool connected);
+    void connectingChanged(bool connecting);
     void cubeStateChanged(const CubeFaces &faces,const QString &lastMove);
 private:
 #ifdef CUBEVISION_HAS_BLUETOOTH
