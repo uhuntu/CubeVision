@@ -28,7 +28,7 @@ constexpr qint64 InitialSyncWindowMilliseconds=750;
 BluetoothCube::BluetoothCube(QObject *parent):QObject(parent){
 #ifdef CUBEVISION_HAS_BLUETOOTH
     discoveryAgent=new QBluetoothDeviceDiscoveryAgent(this);
-    discoveryAgent->setLowEnergyDiscoveryTimeout(12000);
+    discoveryAgent->setLowEnergyDiscoveryTimeout(30000);
     connect(discoveryAgent,&QBluetoothDeviceDiscoveryAgent::deviceDiscovered,
             this,&BluetoothCube::deviceDiscovered);
     connect(discoveryAgent,&QBluetoothDeviceDiscoveryAgent::finished,this,[this]{
